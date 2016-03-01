@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -42,6 +43,7 @@ func New() *Builder {
 }
 
 func (b *Builder) ProcessFile(f string) error {
+	log.Printf(" ===> Using schema file '%s'", f)
 	s, err := hschema.ReadFile(f)
 	if err != nil {
 		return err
@@ -70,15 +72,14 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 		return err
 	}
 
+	log.Printf(" <=== All files generated")
 	return nil
 }
 
 var wsrx = regexp.MustCompile(`\s+`)
 
-func title2method(s string) string {
-	// inefficient as hell
+func title2name(s string) string {
 	buf := bytes.Buffer{}
-	buf.WriteString("http")
 	for _, p := range wsrx.Split(s, -1) {
 		buf.WriteString(strings.ToUpper(p[:1]))
 		buf.WriteString(p[1:])
@@ -88,7 +89,7 @@ func title2method(s string) string {
 
 func parse(ctx *genctx, s *hschema.HyperSchema) error {
 	for i, link := range s.Links {
-		methodName := title2method(link.Title)
+		methodName := title2name(link.Title)
 
 		// Got to do this first, because validators are used in makeMethod()
 		if link.Schema != nil {
@@ -96,7 +97,7 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 			if err != nil {
 				return err
 			}
-			v.Name = strings.Replace(fmt.Sprintf("%sRequest", methodName), "http", "HTTP", 1)
+			v.Name = fmt.Sprintf("HTTP%sRequest", methodName)
 			ctx.methodValidators[methodName] = v
 		}
 		ctx.methodPayloadType[methodName] = "interface{}"
@@ -127,7 +128,7 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 func makeMethod(ctx *genctx, name string, l *hschema.Link) string {
 	buf := bytes.Buffer{}
 
-	fmt.Fprintf(&buf, `func %s(w http.ResponseWriter, r *http.Response) {`+"\n", name)
+	fmt.Fprintf(&buf, `func http%s(w http.ResponseWriter, r *http.Response) {`+"\n", name)
 	if m := l.Method; m != "" {
 		buf.WriteString("\tif strings.ToLower(r.Method) != `")
 		fmt.Fprintf(&buf, "%s", strings.ToLower(m))
@@ -147,9 +148,8 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) string {
 		buf.WriteString("\n\t}")
 	}
 
-	buf.WriteString("\n\thttp.Error(w, `Unimplemented`, http.StatusInternalServerError)")
-
-	fmt.Fprint(&buf, "\n}\n")
+	fmt.Fprintf(&buf, "\n\tdo%s(context.Background(), w, r, payload)", name)
+	buf.WriteString("\n}\n")
 	return buf.String()
 }
 
@@ -164,6 +164,7 @@ func makeValidator(ctx *genctx, l *hschema.Link) (*jsval.JSVal, error) {
 }
 
 func generateFile(ctx *genctx, fn string, cb func(io.Writer, *genctx) error) error {
+	log.Printf(" + Generating file '%s'", fn)
 	f, err := genutil.CreateFile(fn)
 	if err != nil {
 		return err
@@ -198,7 +199,7 @@ func generateFiles(ctxif interface{}) error {
 func generateServerCode(out io.Writer, ctx *genctx) error {
 	buf := bytes.Buffer{}
 
-	buf.WriteString("package apiserver\n\n")
+	fmt.Fprintf(&buf, "package %s\n\n", ctx.apppkg)
 
 	genutil.WriteImports(
 		&buf,
@@ -208,6 +209,7 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 		},
 		[]string{
 			"github.com/gorilla/mux",
+			"golang.org/x/context",
 		},
 	)
 
@@ -232,7 +234,7 @@ func New() *Server {
 	}
 
 	buf.WriteString("func (s *Server) SetupRoutes() {")
-	buf.WriteString("\n\tr := mux.NewRouter()")
+	buf.WriteString("\n\tr := s.Router")
 	paths := make([]string, 0, len(ctx.pathToMethods))
 	for path := range ctx.pathToMethods {
 		paths = append(paths, path)
@@ -240,9 +242,9 @@ func New() *Server {
 	sort.Strings(paths)
 	for _, path := range paths {
 		method := ctx.pathToMethods[path]
-		fmt.Fprintf(&buf, "\tr.HandleFunc(`%s`, %s)\n", path, method)
+		fmt.Fprintf(&buf, "\n\tr.HandleFunc(`%s`, %s)", path, method)
 	}
-	buf.WriteString("}\n")
+	buf.WriteString("\n}\n")
 
 	if _, err := buf.WriteTo(out); err != nil {
 		return err
