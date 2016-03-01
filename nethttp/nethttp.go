@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"go/format"
 	"io"
 	"log"
 	"path/filepath"
@@ -245,7 +246,12 @@ func New() *Server {
 	}
 	buf.WriteString("\n}\n")
 
-	if _, err := buf.WriteTo(out); err != nil {
+	fsrc, err := format.Source(buf.Bytes())
+	if err != nil {
+		return err
+	}
+
+	if _, err := out.Write(fsrc); err != nil {
 		return err
 	}
 	return nil
@@ -276,7 +282,12 @@ func generateValidatorCode(out io.Writer, ctx *genctx) error {
 	}
 	buf.WriteString("\n\n")
 
-	if _, err := buf.WriteTo(out); err != nil {
+	fsrc, err := format.Source(buf.Bytes())
+	if err != nil {
+		return err
+	}
+
+	if _, err := out.Write(fsrc); err != nil {
 		return err
 	}
 
