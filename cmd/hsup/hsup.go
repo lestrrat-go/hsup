@@ -12,8 +12,7 @@ func main() {
 }
 
 func _main() int {
-	b := hsup.New()
-
+	b := hsup.NetHTTP
 	if err := b.ProcessFile(os.Args[1]); err != nil {
 		log.Printf("%s", err)
 		return 1

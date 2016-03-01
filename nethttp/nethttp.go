@@ -1,23 +1,28 @@
-package flavor
+package nethttp
 
 import (
 	"bytes"
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/lestrrat/go-hsup/internal/genutil"
 	"github.com/lestrrat/go-jshschema"
 	"github.com/lestrrat/go-jsval"
 	"github.com/lestrrat/go-jsval/builder"
 	"github.com/lestrrat/go-pdebug"
 )
 
-type ctxNetHTTP struct {
+type Builder struct {
+	AppPkg       string
+	ValidatorPkg string
+}
+
+type genctx struct {
 	apppkg            string
 	schema            *hschema.HyperSchema
 	clientpkg         string
@@ -29,16 +34,43 @@ type ctxNetHTTP struct {
 	pathToMethods     map[string]string
 }
 
-func makeContextForNetHTTP() interface{} {
-	return &ctxNetHTTP{
-		apppkg:            "app",
+func New() *Builder {
+	return &Builder{
+		AppPkg:       "app",
+		ValidatorPkg: "validator",
+	}
+}
+
+func (b *Builder) ProcessFile(f string) error {
+	s, err := hschema.ReadFile(f)
+	if err != nil {
+		return err
+	}
+	return b.Process(s)
+}
+
+func (b *Builder) Process(s *hschema.HyperSchema) error {
+	ctx := genctx{
+		schema:            s,
+		methodNames:       make([]string, len(s.Links)),
+		apppkg:            b.AppPkg,
 		clientpkg:         "client",
-		validatorpkg:      "validator",
+		validatorpkg:      b.ValidatorPkg,
 		methods:           make(map[string]string),
 		methodPayloadType: make(map[string]string),
 		methodValidators:  make(map[string]*jsval.JSVal),
 		pathToMethods:     make(map[string]string),
 	}
+
+	if err := parse(&ctx, s); err != nil {
+		return err
+	}
+
+	if err := generateFiles(&ctx); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 var wsrx = regexp.MustCompile(`\s+`)
@@ -54,25 +86,17 @@ func title2method(s string) string {
 	return buf.String()
 }
 
-func parseForNetHTTP(ctxif interface{}, s *hschema.HyperSchema) error {
-	ctx, ok := ctxif.(*ctxNetHTTP)
-	if !ok {
-		return errors.New("expected ctxNetHTTP type")
-	}
-
-	ctx.schema = s
-	ctx.methodNames = make([]string, len(s.Links))
-
+func parse(ctx *genctx, s *hschema.HyperSchema) error {
 	for i, link := range s.Links {
 		methodName := title2method(link.Title)
 
 		// Got to do this first, because validators are used in makeMethod()
 		if link.Schema != nil {
-			v, err := makeValidatorNetHTTP(ctx, link)
+			v, err := makeValidator(ctx, link)
 			if err != nil {
 				return err
 			}
-			v.Name = fmt.Sprintf("%sRequest", methodName)
+			v.Name = strings.Replace(fmt.Sprintf("%sRequest", methodName), "http", "HTTP", 1)
 			ctx.methodValidators[methodName] = v
 		}
 		ctx.methodPayloadType[methodName] = "interface{}"
@@ -93,14 +117,14 @@ func parseForNetHTTP(ctxif interface{}, s *hschema.HyperSchema) error {
 		}
 		ctx.methodNames[i] = methodName
 		ctx.pathToMethods[link.Path()] = methodName
-		ctx.methods[methodName] = makeMethodNetHTTP(ctx, methodName, link)
+		ctx.methods[methodName] = makeMethod(ctx, methodName, link)
 	}
 
 	sort.Strings(ctx.methodNames)
 	return nil
 }
 
-func makeMethodNetHTTP(ctx *ctxNetHTTP, name string, l *hschema.Link) string {
+func makeMethod(ctx *genctx, name string, l *hschema.Link) string {
 	buf := bytes.Buffer{}
 
 	fmt.Fprintf(&buf, `func %s(w http.ResponseWriter, r *http.Response) {`+"\n", name)
@@ -129,7 +153,7 @@ func makeMethodNetHTTP(ctx *ctxNetHTTP, name string, l *hschema.Link) string {
 	return buf.String()
 }
 
-func makeValidatorNetHTTP(ctx *ctxNetHTTP, l *hschema.Link) (*jsval.JSVal, error) {
+func makeValidator(ctx *genctx, l *hschema.Link) (*jsval.JSVal, error) {
 	b := builder.New()
 	v, err := b.BuildWithCtx(l.Schema, ctx.schema)
 	if err != nil {
@@ -139,48 +163,31 @@ func makeValidatorNetHTTP(ctx *ctxNetHTTP, l *hschema.Link) (*jsval.JSVal, error
 	return v, nil
 }
 
-func createFile(fn string) (*os.File, error) {
-	dir := filepath.Dir(fn)
-	if _, err := os.Stat(dir); err != nil {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, err
-		}
-	}
-	f, err := os.Create(fn)
+func generateFile(ctx *genctx, fn string, cb func(io.Writer, *genctx) error) error {
+	f, err := genutil.CreateFile(fn)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return f, nil
+	defer f.Close()
+	return cb(f, ctx)
 }
 
-func generateForNetHTTP(ctxif interface{}) error {
-	ctx, ok := ctxif.(*ctxNetHTTP)
+func generateFiles(ctxif interface{}) error {
+	ctx, ok := ctxif.(*genctx)
 	if !ok {
-		return errors.New("expected ctxNetHTTP type")
+		return errors.New("expected genctx type")
 	}
 
 	{
 		fn := filepath.Join(ctx.apppkg, fmt.Sprintf("%s.go", ctx.apppkg))
-		f, err := createFile(fn)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-
-		if err := generateServerNetHTTP(f, ctx); err != nil {
+		if err := generateFile(ctx, fn, generateServerCode); err != nil {
 			return err
 		}
 	}
 
 	{
-		fn := filepath.Join(ctx.validatorpkg, fmt.Sprintf("%s.go", ctx.validatorpkg))
-		f, err := createFile(fn)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-
-		if err := generateValidatorNetHTTP(f, ctx); err != nil {
+		fn := filepath.Join(ctx.apppkg, ctx.validatorpkg, fmt.Sprintf("%s.go", ctx.validatorpkg))
+		if err := generateFile(ctx, fn, generateValidatorCode); err != nil {
 			return err
 		}
 	}
@@ -188,12 +195,12 @@ func generateForNetHTTP(ctxif interface{}) error {
 	return nil
 }
 
-func generateServerNetHTTP(out io.Writer, ctx *ctxNetHTTP) error {
+func generateServerCode(out io.Writer, ctx *genctx) error {
 	buf := bytes.Buffer{}
 
 	buf.WriteString("package apiserver\n\n")
 
-	writeimports(
+	genutil.WriteImports(
 		&buf,
 		[]string{
 			"net/http",
@@ -204,12 +211,28 @@ func generateServerNetHTTP(out io.Writer, ctx *ctxNetHTTP) error {
 		},
 	)
 
+	buf.WriteString(`
+type Server struct {
+	*mux.Router
+}
+
+func New() *Server {
+	s := &Server{
+		Router: mux.NewRouter(),
+	}
+	s.SetupRoutes()
+	return s
+}
+
+`)
+
 	for _, methodName := range ctx.methodNames {
 		buf.WriteString(ctx.methods[methodName])
 		buf.WriteString("\n")
 	}
 
-	buf.WriteString("func setupRouter(r *mux.Router) {\n")
+	buf.WriteString("func (s *Server) SetupRoutes() {")
+	buf.WriteString("\n\tr := mux.NewRouter()")
 	paths := make([]string, 0, len(ctx.pathToMethods))
 	for path := range ctx.pathToMethods {
 		paths = append(paths, path)
@@ -227,31 +250,31 @@ func generateServerNetHTTP(out io.Writer, ctx *ctxNetHTTP) error {
 	return nil
 }
 
-func generateValidatorNetHTTP(out io.Writer, ctx *ctxNetHTTP) error {
-  g := jsval.NewGenerator()
-  validators := make([]*jsval.JSVal, 0, len(ctx.methodValidators))
-  for _, v := range ctx.methodValidators {
-    validators = append(validators, v)
-  }
+func generateValidatorCode(out io.Writer, ctx *genctx) error {
+	g := jsval.NewGenerator()
+	validators := make([]*jsval.JSVal, 0, len(ctx.methodValidators))
+	for _, v := range ctx.methodValidators {
+		validators = append(validators, v)
+	}
 
-  buf := bytes.Buffer{}
-  buf.WriteString("package " + ctx.validatorpkg + "\n\n")
+	buf := bytes.Buffer{}
+	buf.WriteString("package " + ctx.validatorpkg + "\n\n")
 
-  writeimports(
-    &buf,
-    nil,
-    []string{
-      "github.com/lestrrat/go-jsval",
-    },
-  )
-  if err := g.Process(&buf, validators...); err != nil {
-    return err
-  }
-  buf.WriteString("\n\n")
+	genutil.WriteImports(
+		&buf,
+		nil,
+		[]string{
+			"github.com/lestrrat/go-jsval",
+		},
+	)
+	if err := g.Process(&buf, validators...); err != nil {
+		return err
+	}
+	buf.WriteString("\n\n")
 
-  if _, err := buf.WriteTo(out); err != nil {
-    return err
-  }
+	if _, err := buf.WriteTo(out); err != nil {
+		return err
+	}
 
-  return nil
+	return nil
 }
