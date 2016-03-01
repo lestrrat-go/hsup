@@ -7,12 +7,12 @@ import (
 	"io"
 	"log"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/lestrrat/go-hsup/internal/genutil"
 	"github.com/lestrrat/go-jshschema"
+	"github.com/lestrrat/go-jsschema"
 	"github.com/lestrrat/go-jsval"
 	"github.com/lestrrat/go-jsval/builder"
 	"github.com/lestrrat/go-pdebug"
@@ -24,15 +24,16 @@ type Builder struct {
 }
 
 type genctx struct {
-	apppkg            string
-	schema            *hschema.HyperSchema
-	clientpkg         string
-	validatorpkg      string
-	methods           map[string]string
-	methodPayloadType map[string]string
-	methodNames       []string
-	methodValidators  map[string]*jsval.JSVal
-	pathToMethods     map[string]string
+	apppkg             string
+	schema             *hschema.HyperSchema
+	clientpkg          string
+	validatorpkg       string
+	methods            map[string]string
+	methodPayloadType  map[string]string
+	methodNames        []string
+	pathToMethods      map[string]string
+	requestValidators  map[string]*jsval.JSVal
+	responseValidators map[string]*jsval.JSVal
 }
 
 func New() *Builder {
@@ -53,15 +54,16 @@ func (b *Builder) ProcessFile(f string) error {
 
 func (b *Builder) Process(s *hschema.HyperSchema) error {
 	ctx := genctx{
-		schema:            s,
-		methodNames:       make([]string, len(s.Links)),
-		apppkg:            b.AppPkg,
-		clientpkg:         "client",
-		validatorpkg:      b.ValidatorPkg,
-		methods:           make(map[string]string),
-		methodPayloadType: make(map[string]string),
-		methodValidators:  make(map[string]*jsval.JSVal),
-		pathToMethods:     make(map[string]string),
+		schema:             s,
+		methodNames:        make([]string, len(s.Links)),
+		apppkg:             b.AppPkg,
+		clientpkg:          "client",
+		validatorpkg:       b.ValidatorPkg,
+		methods:            make(map[string]string),
+		methodPayloadType:  make(map[string]string),
+		pathToMethods:      make(map[string]string),
+		requestValidators:  make(map[string]*jsval.JSVal),
+		responseValidators: make(map[string]*jsval.JSVal),
 	}
 
 	if err := parse(&ctx, s); err != nil {
@@ -76,31 +78,28 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 	return nil
 }
 
-var wsrx = regexp.MustCompile(`\s+`)
-
-func title2name(s string) string {
-	buf := bytes.Buffer{}
-	for _, p := range wsrx.Split(s, -1) {
-		buf.WriteString(strings.ToUpper(p[:1]))
-		buf.WriteString(p[1:])
-	}
-	return buf.String()
-}
-
 func parse(ctx *genctx, s *hschema.HyperSchema) error {
 	for i, link := range s.Links {
-		methodName := title2name(link.Title)
+		methodName := genutil.TitleToName(link.Title)
 
 		// Got to do this first, because validators are used in makeMethod()
-		if link.Schema != nil {
-			v, err := makeValidator(ctx, link)
+		if s := link.Schema; s != nil {
+			v, err := makeValidator(ctx, s)
 			if err != nil {
 				return err
 			}
 			v.Name = fmt.Sprintf("HTTP%sRequest", methodName)
-			ctx.methodValidators[methodName] = v
+			ctx.requestValidators[methodName] = v
 		}
 		ctx.methodPayloadType[methodName] = "interface{}"
+		if s := link.TargetSchema; s != nil {
+			v, err := makeValidator(ctx, s)
+			if err != nil {
+				return err
+			}
+			v.Name = fmt.Sprintf("HTTP%sResponse", methodName)
+			ctx.responseValidators[methodName] = v
+		}
 		if ls := link.Schema; ls != nil {
 			if !ls.IsResolved() {
 				rs, err := ls.Resolve(ctx.schema)
@@ -135,7 +134,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) string {
 		buf.WriteString("` {\n\t\thttp.Error(w, `Not Found`, http.StatusNotFound)\n\t}\n")
 	}
 
-	if v := ctx.methodValidators[name]; v != nil {
+	if v := ctx.requestValidators[name]; v != nil {
 		payloadType := ctx.methodPayloadType[name]
 		fmt.Fprintf(&buf, "\n\tvar payload %s", payloadType)
 		buf.WriteString("\n\tif err := json.NewDecoder(r.Body).Decode(&payload); err != nil {")
@@ -153,9 +152,9 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) string {
 	return buf.String()
 }
 
-func makeValidator(ctx *genctx, l *hschema.Link) (*jsval.JSVal, error) {
+func makeValidator(ctx *genctx, s *schema.Schema) (*jsval.JSVal, error) {
 	b := builder.New()
-	v, err := b.BuildWithCtx(l.Schema, ctx.schema)
+	v, err := b.BuildWithCtx(s, ctx.schema)
 	if err != nil {
 		return nil, err
 	}
@@ -254,8 +253,11 @@ func New() *Server {
 
 func generateValidatorCode(out io.Writer, ctx *genctx) error {
 	g := jsval.NewGenerator()
-	validators := make([]*jsval.JSVal, 0, len(ctx.methodValidators))
-	for _, v := range ctx.methodValidators {
+	validators := make([]*jsval.JSVal, 0, len(ctx.requestValidators)+len(ctx.responseValidators))
+	for _, v := range ctx.requestValidators {
+		validators = append(validators, v)
+	}
+	for _, v := range ctx.responseValidators {
 		validators = append(validators, v)
 	}
 

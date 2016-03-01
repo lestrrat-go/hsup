@@ -1,11 +1,25 @@
 package genutil
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 )
+
+var wsrx = regexp.MustCompile(`\s+`)
+
+func TitleToName(s string) string {
+	buf := bytes.Buffer{}
+	for _, p := range wsrx.Split(s, -1) {
+		buf.WriteString(strings.ToUpper(p[:1]))
+		buf.WriteString(p[1:])
+	}
+	return buf.String()
+}
 
 func WriteImports(out io.Writer, stdlibs, extlibs []string) error {
 	if len(stdlibs) == 0 && len(extlibs) == 0 {
