@@ -61,11 +61,12 @@ func (b *Builder) ProcessFile(f string) error {
 func (b *Builder) Process(s *hschema.HyperSchema) error {
 	ctx := genctx{
 		schema:             s,
-		methodNames:        make([]string, len(s.Links)),
 		apppkg:             b.AppPkg,
 		clientpkg:          b.ClientPkg,
 		methods:            make(map[string]string),
 		methodPayloadType:  make(map[string]string),
+		methodNames:        make([]string, len(s.Links)),
+		overwrite:          b.Overwrite,
 		pkgpath:            b.PkgPath,
 		pathToMethods:      make(map[string]string),
 		requestValidators:  make(map[string]*jsval.JSVal),
