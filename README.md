@@ -7,11 +7,11 @@ Generate scaffold web app from JSON Hyper Schema files
 Generate net/http flavored server code
 
 ```shell
-hsup -s /path/to/schema.json -f nethttp
+hsup -s /path/to/hyper-schema.json -f nethttp
 ```
 
 Generate http.Client based client code
 
 ```shell
-hsup -s /path/to/schema.json -f httpclient
+hsup -s /path/to/hyper-schema.json -f httpclient
 ```
