@@ -200,7 +200,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 					switch v.Type[0] {
 					case schema.IntegerType:
 						fmt.Fprintf(&buf, "\nv, err := getInteger(r.Form, %s)", qk)
-						fmt.Fprintf(&buf, `i
+						fmt.Fprintf(&buf, `
 if err != nil {
 	http.Error(w, "Invalid parameter " + %s, http.StatusInternalServerError)
 	return
@@ -238,7 +238,11 @@ default:
 		buf.WriteString("\n}")
 	}
 
-	fmt.Fprintf(&buf, "\ndo%s(context.Background(), w, r, payload)", name)
+	fmt.Fprintf(&buf, "\ndo%s(context.Background(), w, r", name)
+	if _, ok := ctx.requestValidators[name]; ok {
+		buf.WriteString(`, payload`)
+	}
+	buf.WriteString(`)`)
 	buf.WriteString("\n}\n")
 
 	return buf.String(), nil
@@ -367,11 +371,14 @@ func generateStubHandlerCode(out io.Writer, ctx *genctx) error {
 	for _, methodName := range ctx.methodNames {
 		payloadType := ctx.requestPayloadType[methodName]
 
-		fmt.Fprintf(&buf, "\nfunc do%s(ctx context.Context, w http.ResponseWriter, r *http.Request, payload ", methodName)
-		if genutil.LooksLikeStruct(payloadType) {
-			buf.WriteRune('*')
+		fmt.Fprintf(&buf, "\nfunc do%s(ctx context.Context, w http.ResponseWriter, r *http.Request", methodName)
+		if _, ok := ctx.requestValidators[methodName]; ok {
+			buf.WriteString(`, payload `)
+			if genutil.LooksLikeStruct(payloadType) {
+				buf.WriteRune('*')
+			}
+			buf.WriteString(payloadType)
 		}
-		buf.WriteString(payloadType)
 		buf.WriteString(") {")
 		buf.WriteString("\n}\n")
 	}
