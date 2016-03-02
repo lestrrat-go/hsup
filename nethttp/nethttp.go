@@ -205,7 +205,6 @@ default:
 	fmt.Fprintf(&buf, "\ndo%s(context.Background(), w, r, payload)", name)
 	buf.WriteString("\n}\n")
 
-log.Printf(buf.String())
 	return buf.String(), nil
 }
 
