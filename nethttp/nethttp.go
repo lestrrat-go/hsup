@@ -269,6 +269,52 @@ func generateFiles(ctxif interface{}) error {
 		}
 	}
 
+	{
+		fn := filepath.Join(ctx.apppkg, "cmd", ctx.apppkg, fmt.Sprintf("%s.go", ctx.apppkg))
+		if err := generateFile(ctx, fn, generateExecutableCode); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func generateExecutableCode(out io.Writer, ctx *genctx) error {
+	buf := bytes.Buffer{}
+	buf.WriteString(`package main` + "\n\n")
+	genutil.WriteImports(
+		&buf,
+		[]string{"log", "os"},
+		[]string{ctx.pkgpath, "github.com/jessevdk/go-flags"},
+	)
+
+	buf.WriteString(`type options struct {` + "\n")
+	buf.WriteString(`Listen string ` + "`" + `short:"l" long:"listen" default:":8080" description:"Listen address"` + "`\n")
+	buf.WriteString("}\n")
+	buf.WriteString(`func main() { os.Exit(_main()) }`+"\n")
+	buf.WriteString(`func _main() int {
+	var opts options
+	if _, err := flags.Parse(&opts); err != nil {
+		log.Printf("%s", err)
+		return 1
+	}
+`)
+	buf.WriteString(`log.Printf("Server listening on %s", opts.Listen)`+"\n")
+	fmt.Fprintf(&buf, `if err := %s.Run(opts.Listen); err != nil {` + "\n", ctx.apppkg)
+	buf.WriteString(` log.Printf("%s", err)
+		return 1
+	}
+	return 0
+}`)
+
+	fsrc, err := format.Source(buf.Bytes())
+	if err != nil {
+		return err
+	}
+
+	if _, err := out.Write(fsrc); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -334,6 +380,10 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 	buf.WriteString(`
 type Server struct {
 	*mux.Router
+}
+
+func Run(l string) error {
+	return http.ListenAndServe(l, New())
 }
 
 func New() *Server {
