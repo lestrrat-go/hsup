@@ -17,10 +17,10 @@ func main() {
 type options struct {
 	Dir       string `short:"d" long:"dir" required:"true" description:"Directory to place all files under"`
 	PkgPath   string
-	AppPkg    string `short:"a" long:"apppkg" description:"Application package name"`
-	Schema    string `short:"s" long:"schema" required:"true" description:"schema file to process"`
-	Flavor    string `short:"f" long:"flavor" default:"nethttp" description:"what type of code to generate"`
-	Overwrite bool   `short:"O" long:"overwrite" default:"false" description:"overwrite if file exists"`
+	AppPkg    string   `short:"a" long:"apppkg" description:"Application package name"`
+	Schema    string   `short:"s" long:"schema" required:"true" description:"schema file to process"`
+	Flavor    []string `short:"f" long:"flavor" default:"nethttp" description:"what type of code to generate"`
+	Overwrite bool     `short:"O" long:"overwrite" default:"false" description:"overwrite if file exists"`
 }
 
 func _main() int {
@@ -62,19 +62,22 @@ func _main() int {
 	}
 
 	var cb func(options) error
-	switch opts.Flavor {
-	case "nethttp":
-		cb = doNetHTTP
-	case "httpclient":
-		cb = doHTTPClient
-	default:
-		log.Printf("unknown argument to `flavor`: %s", opts.Flavor)
-		return 1
-	}
+	for _, f := range opts.Flavor {
+		log.Printf(" ===> running flavor '%s'", f)
+		switch f {
+		case "nethttp":
+			cb = doNetHTTP
+		case "httpclient":
+			cb = doHTTPClient
+		default:
+			log.Printf("unknown argument to `flavor`: %s", opts.Flavor)
+			return 1
+		}
 
-	if err := cb(opts); err != nil {
-		log.Printf("%s", err)
-		return 1
+		if err := cb(opts); err != nil {
+			log.Printf("%s", err)
+			return 1
+		}
 	}
 	return 0
 }
