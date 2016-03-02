@@ -178,7 +178,6 @@ if err != nil {
 					fmt.Fprintf(&buf, `
 switch len(v) {
 case 0:
-	continue
 case 1:
 	payload[%s] = v[0]
 default:
@@ -313,9 +312,21 @@ func getInteger(v url.Values, f string) ([]int64, error) {
 	sort.Strings(paths)
 	for _, path := range paths {
 		method := ctx.pathToMethods[path]
-		fmt.Fprintf(&buf, "\nr.HandleFunc(`%s`, %s)", path, method)
+		fmt.Fprintf(&buf, "\nr.HandleFunc(`%s`, http%s)", path, method)
 	}
 	buf.WriteString("\n}\n")
+
+	for _, methodName := range ctx.methodNames {
+		payloadType := ctx.methodPayloadType[methodName]
+
+		fmt.Fprintf(&buf, "\nfunc do%s(ctx context.Context, w http.ResponseWriter, r *http.Request, payload ", methodName)
+		if genutil.LooksLikeStruct(payloadType) {
+			buf.WriteRune('*')
+		}
+		buf.WriteString(payloadType)
+		buf.WriteString(") {")
+		buf.WriteString("\n}\n")
+	}
 
 	fsrc, err := format.Source(buf.Bytes())
 	if err != nil {
