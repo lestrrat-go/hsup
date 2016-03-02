@@ -15,6 +15,7 @@ func main() {
 type options struct {
 	Schema string `short:"s" long:"schema" required:"true" description:"schema file to process"`
 	Flavor string `short:"f" long:"flavor" default:"nethttp" description:"what type of code to generate"`
+	Overwrite bool `short:"O" long:"overwrite" default:"false" description:"overwrite if file exists"`
 }
 func _main() int {
 	var opts options
@@ -43,6 +44,7 @@ func _main() int {
 
 func doNetHTTP(opts options) error {
 	b := hsup.NetHTTP
+	b.Overwrite = opts.Overwrite
 	if err := b.ProcessFile(opts.Schema); err != nil {
 		return err
 	}

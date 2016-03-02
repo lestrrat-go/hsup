@@ -7,6 +7,7 @@ import (
 	"go/format"
 	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -21,6 +22,7 @@ import (
 
 type Builder struct {
 	AppPkg       string
+	Overwrite    bool
 	ValidatorPkg string
 }
 
@@ -32,6 +34,7 @@ type genctx struct {
 	methods            map[string]string
 	methodPayloadType  map[string]string
 	methodNames        []string
+	overwrite          bool
 	pathToMethods      map[string]string
 	requestValidators  map[string]*jsval.JSVal
 	responseValidators map[string]*jsval.JSVal
@@ -40,6 +43,7 @@ type genctx struct {
 func New() *Builder {
 	return &Builder{
 		AppPkg:       "app",
+		Overwrite:    false,
 		ValidatorPkg: "validator",
 	}
 }
@@ -62,6 +66,7 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 		validatorpkg:       b.ValidatorPkg,
 		methods:            make(map[string]string),
 		methodPayloadType:  make(map[string]string),
+		overwrite:          b.Overwrite,
 		pathToMethods:      make(map[string]string),
 		requestValidators:  make(map[string]*jsval.JSVal),
 		responseValidators: make(map[string]*jsval.JSVal),
@@ -211,6 +216,14 @@ default:
 }
 
 func generateFile(ctx *genctx, fn string, cb func(io.Writer, *genctx) error) error {
+	if _, err := os.Stat(fn); err == nil {
+		if !ctx.overwrite {
+			log.Printf(" - File '%s' already exists. Skipping", fn)
+			return nil
+		}
+		log.Printf(" * File '%s' already exists. Overwriting", fn)
+	}
+
 	log.Printf(" + Generating file '%s'", fn)
 	f, err := genutil.CreateFile(fn)
 	if err != nil {
@@ -234,12 +247,57 @@ func generateFiles(ctxif interface{}) error {
 	}
 
 	{
+		fn := filepath.Join(ctx.apppkg, "handlers.go")
+		if err := generateFile(ctx, fn, generateStubHandlerCode); err != nil {
+			return err
+		}
+	}
+
+	{
 		fn := filepath.Join(ctx.apppkg, ctx.validatorpkg, fmt.Sprintf("%s.go", ctx.validatorpkg))
 		if err := generateFile(ctx, fn, generateValidatorCode); err != nil {
 			return err
 		}
 	}
 
+	return nil
+}
+
+func generateStubHandlerCode(out io.Writer, ctx *genctx) error {
+	buf := bytes.Buffer{}
+
+	fmt.Fprintf(&buf, "package %s\n\n", ctx.apppkg)
+
+	genutil.WriteImports(
+		&buf,
+		[]string{
+			"net/http",
+		},
+		[]string{
+			"golang.org/x/net/context",
+		},
+	)
+
+	for _, methodName := range ctx.methodNames {
+		payloadType := ctx.methodPayloadType[methodName]
+
+		fmt.Fprintf(&buf, "\nfunc do%s(ctx context.Context, w http.ResponseWriter, r *http.Request, payload ", methodName)
+		if genutil.LooksLikeStruct(payloadType) {
+			buf.WriteRune('*')
+		}
+		buf.WriteString(payloadType)
+		buf.WriteString(") {")
+		buf.WriteString("\n}\n")
+	}
+
+	fsrc, err := format.Source(buf.Bytes())
+	if err != nil {
+		return err
+	}
+
+	if _, err := out.Write(fsrc); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -294,8 +352,6 @@ func getInteger(v url.Values, f string) ([]int64, error) {
 	return ret, nil
 }
 
-
-
 `)
 
 	for _, methodName := range ctx.methodNames {
@@ -315,18 +371,6 @@ func getInteger(v url.Values, f string) ([]int64, error) {
 		fmt.Fprintf(&buf, "\nr.HandleFunc(`%s`, http%s)", path, method)
 	}
 	buf.WriteString("\n}\n")
-
-	for _, methodName := range ctx.methodNames {
-		payloadType := ctx.methodPayloadType[methodName]
-
-		fmt.Fprintf(&buf, "\nfunc do%s(ctx context.Context, w http.ResponseWriter, r *http.Request, payload ", methodName)
-		if genutil.LooksLikeStruct(payloadType) {
-			buf.WriteRune('*')
-		}
-		buf.WriteString(payloadType)
-		buf.WriteString(") {")
-		buf.WriteString("\n}\n")
-	}
 
 	fsrc, err := format.Source(buf.Bytes())
 	if err != nil {
