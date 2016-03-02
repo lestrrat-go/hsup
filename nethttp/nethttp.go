@@ -161,7 +161,11 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 			// If this is a get request, then we'd have to assemble
 			// the incoming data from r.Form
 			if payloadType == "interface{}" {
-				buf.WriteString("\nvar payload map[string]interface{}")
+				buf.WriteString("\nif err := r.ParseForm(); err != nil {")
+				buf.WriteString("\nhttp.Error(w, `Failed to process query/post form`, http.StatusInternalServerError)")
+				buf.WriteString("\nreturn")
+				buf.WriteString("\n}")
+				buf.WriteString("\npayload := make(map[string]interface{})")
 				for k, v := range l.Schema.Properties {
 					if !v.IsResolved() {
 						rv, err := v.Resolve(ctx.schema)
@@ -207,11 +211,11 @@ default:
 				buf.WriteRune('*')
 			}
 			buf.WriteString(payloadType)
+			buf.WriteString("\nif err := json.NewDecoder(r.Body).Decode(payload); err != nil {")
+			buf.WriteString("\nhttp.Error(w, `Invalid input`, http.StatusInternalServerError)")
+			buf.WriteString("\nreturn")
+			buf.WriteString("\n}")
 		}
-		buf.WriteString("\nif err := json.NewDecoder(r.Body).Decode(payload); err != nil {")
-		buf.WriteString("\nhttp.Error(w, `Invalid input`, http.StatusInternalServerError)")
-		buf.WriteString("\nreturn")
-		buf.WriteString("\n}")
 		fmt.Fprintf(&buf, "\n\nif err := %s.%s.Validate(payload); err != nil {", ctx.validatorpkg, v.Name)
 		buf.WriteString("\nhttp.Error(w, `Invalid input`, http.StatusInternalServerError)")
 		buf.WriteString("\nreturn")
