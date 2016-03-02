@@ -6,6 +6,7 @@ import (
 	"go/format"
 	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -20,6 +21,8 @@ import (
 type Builder struct {
 	AppPkg       string
 	ClientPkg    string
+	Overwrite    bool
+	PkgPath      string
 	ValidatorPkg string
 }
 
@@ -31,15 +34,17 @@ type genctx struct {
 	methods            map[string]string
 	methodPayloadType  map[string]string
 	methodNames        []string
+	overwrite          bool
 	pathToMethods      map[string]string
+	pkgpath            string
 	requestValidators  map[string]*jsval.JSVal
 	responseValidators map[string]*jsval.JSVal
 }
 
 func New() *Builder {
 	return &Builder{
-		AppPkg:       "app",
 		ClientPkg:    "client",
+		Overwrite:    false,
 		ValidatorPkg: "validator",
 	}
 }
@@ -59,12 +64,13 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 		methodNames:        make([]string, len(s.Links)),
 		apppkg:             b.AppPkg,
 		clientpkg:          b.ClientPkg,
-		validatorpkg:       b.ValidatorPkg,
 		methods:            make(map[string]string),
 		methodPayloadType:  make(map[string]string),
+		pkgpath:            b.PkgPath,
 		pathToMethods:      make(map[string]string),
 		requestValidators:  make(map[string]*jsval.JSVal),
 		responseValidators: make(map[string]*jsval.JSVal),
+		validatorpkg:       b.ValidatorPkg,
 	}
 
 	if err := parse(&ctx, s); err != nil {
@@ -228,6 +234,14 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 }
 
 func generateFile(ctx *genctx, fn string, cb func(io.Writer, *genctx) error) error {
+	if _, err := os.Stat(fn); err == nil {
+		if !ctx.overwrite {
+			log.Printf(" - File '%s' already exists. Skipping", fn)
+			return nil
+		}
+		log.Printf(" * File '%s' already exists. Overwriting", fn)
+	}
+
 	log.Printf(" + Generating file '%s'", fn)
 	f, err := genutil.CreateFile(fn)
 	if err != nil {

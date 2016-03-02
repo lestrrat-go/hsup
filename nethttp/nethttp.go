@@ -23,6 +23,7 @@ import (
 type Builder struct {
 	AppPkg       string
 	Overwrite    bool
+	PkgPath      string
 	ValidatorPkg string
 }
 
@@ -36,13 +37,13 @@ type genctx struct {
 	methodNames        []string
 	overwrite          bool
 	pathToMethods      map[string]string
+	pkgpath            string
 	requestValidators  map[string]*jsval.JSVal
 	responseValidators map[string]*jsval.JSVal
 }
 
 func New() *Builder {
 	return &Builder{
-		AppPkg:       "app",
 		Overwrite:    false,
 		ValidatorPkg: "validator",
 	}
@@ -58,18 +59,26 @@ func (b *Builder) ProcessFile(f string) error {
 }
 
 func (b *Builder) Process(s *hschema.HyperSchema) error {
+	if b.AppPkg == "" {
+		return errors.New("AppPkg cannot be empty")
+	}
+
+	if b.PkgPath == "" {
+		return errors.New("PkgPath cannot be empty")
+	}
+
 	ctx := genctx{
 		schema:             s,
 		methodNames:        make([]string, len(s.Links)),
 		apppkg:             b.AppPkg,
-		clientpkg:          "client",
-		validatorpkg:       b.ValidatorPkg,
 		methods:            make(map[string]string),
 		methodPayloadType:  make(map[string]string),
 		overwrite:          b.Overwrite,
 		pathToMethods:      make(map[string]string),
+		pkgpath:            b.PkgPath,
 		requestValidators:  make(map[string]*jsval.JSVal),
 		responseValidators: make(map[string]*jsval.JSVal),
+		validatorpkg:       b.ValidatorPkg,
 	}
 
 	if err := parse(&ctx, s); err != nil {
@@ -316,6 +325,7 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 			"strings",
 		},
 		[]string{
+			filepath.Join(ctx.pkgpath, "validator"),
 			"github.com/gorilla/mux",
 			"golang.org/x/net/context",
 		},
