@@ -28,18 +28,19 @@ type Builder struct {
 }
 
 type genctx struct {
-	apppkg             string
-	schema             *hschema.HyperSchema
-	clientpkg          string
-	validatorpkg       string
-	methods            map[string]string
-	methodPayloadType  map[string]string
-	methodNames        []string
-	overwrite          bool
-	pathToMethods      map[string]string
-	pkgpath            string
-	requestValidators  map[string]*jsval.JSVal
-	responseValidators map[string]*jsval.JSVal
+	apppkg              string
+	schema              *hschema.HyperSchema
+	clientpkg           string
+	validatorpkg        string
+	methods             map[string]string
+	methodNames         []string
+	overwrite           bool
+	pathToMethods       map[string]string
+	pkgpath             string
+	requestPayloadType  map[string]string
+	requestValidators   map[string]*jsval.JSVal
+	responsePayloadType map[string]string
+	responseValidators  map[string]*jsval.JSVal
 }
 
 func New() *Builder {
@@ -68,17 +69,18 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 	}
 
 	ctx := genctx{
-		schema:             s,
-		methodNames:        make([]string, len(s.Links)),
-		apppkg:             b.AppPkg,
-		methods:            make(map[string]string),
-		methodPayloadType:  make(map[string]string),
-		overwrite:          b.Overwrite,
-		pathToMethods:      make(map[string]string),
-		pkgpath:            b.PkgPath,
-		requestValidators:  make(map[string]*jsval.JSVal),
-		responseValidators: make(map[string]*jsval.JSVal),
-		validatorpkg:       b.ValidatorPkg,
+		schema:              s,
+		methodNames:         make([]string, len(s.Links)),
+		apppkg:              b.AppPkg,
+		methods:             make(map[string]string),
+		overwrite:           b.Overwrite,
+		pathToMethods:       make(map[string]string),
+		pkgpath:             b.PkgPath,
+		requestPayloadType:  make(map[string]string),
+		requestValidators:   make(map[string]*jsval.JSVal),
+		responseValidators:  make(map[string]*jsval.JSVal),
+		responsePayloadType: make(map[string]string),
+		validatorpkg:        b.ValidatorPkg,
 	}
 
 	if err := parse(&ctx, s); err != nil {
@@ -96,25 +98,9 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 func parse(ctx *genctx, s *hschema.HyperSchema) error {
 	for i, link := range s.Links {
 		methodName := genutil.TitleToName(link.Title)
-		ctx.methodPayloadType[methodName] = "interface{}"
+		ctx.requestPayloadType[methodName] = "interface{}"
 
 		// Got to do this first, because validators are used in makeMethod()
-		if s := link.Schema; s != nil {
-			v, err := genutil.MakeValidator(s, ctx.schema)
-			if err != nil {
-				return err
-			}
-			v.Name = fmt.Sprintf("HTTP%sRequest", methodName)
-			ctx.requestValidators[methodName] = v
-		}
-		if s := link.TargetSchema; s != nil {
-			v, err := genutil.MakeValidator(s, ctx.schema)
-			if err != nil {
-				return err
-			}
-			v.Name = fmt.Sprintf("HTTP%sResponse", methodName)
-			ctx.responseValidators[methodName] = v
-		}
 		if ls := link.Schema; ls != nil {
 			if !ls.IsResolved() {
 				rs, err := ls.Resolve(ctx.schema)
@@ -123,11 +109,41 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 				}
 				ls = rs
 			}
+			v, err := genutil.MakeValidator(ls, ctx.schema)
+			if err != nil {
+				return err
+			}
+			if gt, ok := ls.Extras["gotype"]; ok {
+				ctx.requestPayloadType[methodName] = gt.(string)
+			}
+			v.Name = fmt.Sprintf("HTTP%sRequest", methodName)
+			ctx.requestValidators[methodName] = v
+		}
+		if ls := link.TargetSchema; ls != nil {
+			if !ls.IsResolved() {
+				rs, err := ls.Resolve(ctx.schema)
+				if err != nil {
+					return err
+				}
+				ls = rs
+			}
+			v, err := genutil.MakeValidator(ls, ctx.schema)
+			if err != nil {
+				return err
+			}
+			if gt, ok := ls.Extras["gotype"]; ok {
+				ctx.responsePayloadType[methodName] = gt.(string)
+			}
+			v.Name = fmt.Sprintf("HTTP%sResponse", methodName)
+			ctx.responseValidators[methodName] = v
+		}
+
+		if ls := link.Schema; ls != nil {
 			if pdebug.Enabled {
 				pdebug.Printf("checking extras for %s: %#v", link.Path(), ls.Extras)
 			}
 			if gt, ok := ls.Extras["gotype"]; ok {
-				ctx.methodPayloadType[methodName] = gt.(string)
+				ctx.requestPayloadType[methodName] = gt.(string)
 			}
 		}
 		ctx.methodNames[i] = methodName
@@ -156,7 +172,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	buf.WriteString("` {\nhttp.Error(w, `Not Found`, http.StatusNotFound)\n}\n")
 
 	if v := ctx.requestValidators[name]; v != nil {
-		payloadType := ctx.methodPayloadType[name]
+		payloadType := ctx.requestPayloadType[name]
 		if method == "get" {
 			// If this is a get request, then we'd have to assemble
 			// the incoming data from r.Form
@@ -280,6 +296,13 @@ func generateFiles(ctxif interface{}) error {
 		}
 	}
 
+	{
+		fn := filepath.Join(ctx.apppkg, "interface.go")
+		if err := generateFile(ctx, fn, generateDataCode); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -295,7 +318,7 @@ func generateExecutableCode(out io.Writer, ctx *genctx) error {
 	buf.WriteString(`type options struct {` + "\n")
 	buf.WriteString(`Listen string ` + "`" + `short:"l" long:"listen" default:":8080" description:"Listen address"` + "`\n")
 	buf.WriteString("}\n")
-	buf.WriteString(`func main() { os.Exit(_main()) }`+"\n")
+	buf.WriteString(`func main() { os.Exit(_main()) }` + "\n")
 	buf.WriteString(`func _main() int {
 	var opts options
 	if _, err := flags.Parse(&opts); err != nil {
@@ -303,8 +326,8 @@ func generateExecutableCode(out io.Writer, ctx *genctx) error {
 		return 1
 	}
 `)
-	buf.WriteString(`log.Printf("Server listening on %s", opts.Listen)`+"\n")
-	fmt.Fprintf(&buf, `if err := %s.Run(opts.Listen); err != nil {` + "\n", ctx.apppkg)
+	buf.WriteString(`log.Printf("Server listening on %s", opts.Listen)` + "\n")
+	fmt.Fprintf(&buf, `if err := %s.Run(opts.Listen); err != nil {`+"\n", ctx.apppkg)
 	buf.WriteString(` log.Printf("%s", err)
 		return 1
 	}
@@ -338,7 +361,7 @@ func generateStubHandlerCode(out io.Writer, ctx *genctx) error {
 	)
 
 	for _, methodName := range ctx.methodNames {
-		payloadType := ctx.methodPayloadType[methodName]
+		payloadType := ctx.requestPayloadType[methodName]
 
 		fmt.Fprintf(&buf, "\nfunc do%s(ctx context.Context, w http.ResponseWriter, r *http.Request, payload ", methodName)
 		if genutil.LooksLikeStruct(payloadType) {
@@ -471,6 +494,36 @@ func generateValidatorCode(out io.Writer, ctx *genctx) error {
 		return err
 	}
 	buf.WriteString("\n\n")
+
+	fsrc, err := format.Source(buf.Bytes())
+	if err != nil {
+		return err
+	}
+
+	if _, err := out.Write(fsrc); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func generateDataCode(out io.Writer, ctx *genctx) error {
+	buf := bytes.Buffer{}
+	fmt.Fprintf(&buf, `package %s` + "\n\n", ctx.apppkg)
+
+	types := make(map[string]struct{})
+	for _, t := range ctx.requestPayloadType {
+		types[t] = struct{}{}
+	}
+	for _, t := range ctx.responsePayloadType {
+		types[t] = struct{}{}
+	}
+
+	for t := range types {
+		if genutil.LooksLikeStruct(t) {
+			fmt.Fprintf(&buf, "type %s struct {}\n", t)
+		}
+	}
 
 	fsrc, err := format.Source(buf.Bytes())
 	if err != nil {
