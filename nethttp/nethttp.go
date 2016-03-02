@@ -132,7 +132,7 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	buf := bytes.Buffer{}
 
-	fmt.Fprintf(&buf, `func http%s(w http.ResponseWriter, r *http.Response) {`+"\n", name)
+	fmt.Fprintf(&buf, `func http%s(w http.ResponseWriter, r *http.Request) {`+"\n", name)
 	method := strings.ToLower(l.Method)
 	if method == "" {
 		method = "get"
@@ -161,9 +161,11 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 						return "", errors.New("'" + name + "' can't handle input parameters unless the type contains exactly 1 type")
 					}
 
+					qk := strconv.Quote(k)
+					buf.WriteString("\n{")
 					switch v.Type[0] {
 					case schema.IntegerType:
-						fmt.Fprintf(&buf, "\nv, err := getInteger(r.Forms, %s)", strconv.Quote(k))
+						fmt.Fprintf(&buf, "\nv, err := getInteger(r.Form, %s)", qk)
 						fmt.Fprintf(&buf, `i
 if err != nil {
 	http.Error(w, "Invalid parameter " + %s, http.StatusInternalServerError)
@@ -171,18 +173,19 @@ if err != nil {
 }
 `, strconv.Quote(k))
 					case schema.StringType:
-						fmt.Fprintf(&buf, "\nv := r.Forms[%s]", strconv.Quote(k))
+						fmt.Fprintf(&buf, "\nv := r.Form[%s]", qk)
 					}
-					buf.WriteString(`
+					fmt.Fprintf(&buf, `
 switch len(v) {
 case 0:
 	continue
 case 1:
-	payload[k] = v[0]
+	payload[%s] = v[0]
 default:
-	payload[k] = v
+	payload[%s] = v
 }
-`)
+}
+`, qk, qk)
 				}
 			}
 		} else {
@@ -249,12 +252,15 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 	genutil.WriteImports(
 		&buf,
 		[]string{
+			"encoding/json",
 			"net/http",
+			"net/url",
+			"strconv",
 			"strings",
 		},
 		[]string{
 			"github.com/gorilla/mux",
-			"golang.org/x/context",
+			"golang.org/x/net/context",
 		},
 	)
 
