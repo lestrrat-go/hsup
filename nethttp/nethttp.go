@@ -336,7 +336,11 @@ func generateExecutableCode(out io.Writer, ctx *genctx) error {
 
 	fsrc, err := format.Source(buf.Bytes())
 	if err != nil {
-		return err
+		log.Printf("Failed to cleanup Go code (probably a syntax error). Generating file anyway")
+		if _, err := buf.WriteTo(out); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	if _, err := out.Write(fsrc); err != nil {
@@ -374,7 +378,11 @@ func generateStubHandlerCode(out io.Writer, ctx *genctx) error {
 
 	fsrc, err := format.Source(buf.Bytes())
 	if err != nil {
-		return err
+		log.Printf("Failed to cleanup Go code (probably a syntax error). Generating file anyway")
+		if _, err := buf.WriteTo(out); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	if _, err := out.Write(fsrc); err != nil {
@@ -461,7 +469,11 @@ func getInteger(v url.Values, f string) ([]int64, error) {
 
 	fsrc, err := format.Source(buf.Bytes())
 	if err != nil {
-		return err
+		log.Printf("Failed to cleanup Go code (probably a syntax error). Generating file anyway")
+		if _, err := buf.WriteTo(out); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	if _, err := out.Write(fsrc); err != nil {
@@ -497,7 +509,11 @@ func generateValidatorCode(out io.Writer, ctx *genctx) error {
 
 	fsrc, err := format.Source(buf.Bytes())
 	if err != nil {
-		return err
+		log.Printf("Failed to cleanup Go code (probably a syntax error). Generating file anyway")
+		if _, err := buf.WriteTo(out); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	if _, err := out.Write(fsrc); err != nil {
@@ -527,7 +543,11 @@ func generateDataCode(out io.Writer, ctx *genctx) error {
 
 	fsrc, err := format.Source(buf.Bytes())
 	if err != nil {
-		return err
+		log.Printf("Failed to cleanup Go code (probably a syntax error). Generating file anyway")
+		if _, err := buf.WriteTo(out); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	if _, err := out.Write(fsrc); err != nil {
