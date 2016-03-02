@@ -7,6 +7,7 @@ package hsup
 // hsup.NetHTTP.ProcessFile(schemaFile)
 
 import (
+	"github.com/lestrrat/go-hsup/httpclient"
 	"github.com/lestrrat/go-hsup/nethttp"
 	"github.com/lestrrat/go-jshschema"
 )
@@ -19,3 +20,8 @@ type Processor interface {
 // NetHTTP implements the scaffold generator that generates
 // net/http compliant code.
 var NetHTTP = nethttp.New()
+
+// HTTPClient implements the scaffold generator that generates
+// net/http compliant code.
+var HTTPClient = httpclient.New()
+

@@ -1,8 +1,7 @@
-package nethttp
+package httpclient
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"go/format"
 	"io"
@@ -14,13 +13,13 @@ import (
 
 	"github.com/lestrrat/go-hsup/internal/genutil"
 	"github.com/lestrrat/go-jshschema"
-	"github.com/lestrrat/go-jsschema"
 	"github.com/lestrrat/go-jsval"
 	"github.com/lestrrat/go-pdebug"
 )
 
 type Builder struct {
 	AppPkg       string
+	ClientPkg    string
 	ValidatorPkg string
 }
 
@@ -40,6 +39,7 @@ type genctx struct {
 func New() *Builder {
 	return &Builder{
 		AppPkg:       "app",
+		ClientPkg:    "client",
 		ValidatorPkg: "validator",
 	}
 }
@@ -58,7 +58,7 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 		schema:             s,
 		methodNames:        make([]string, len(s.Links)),
 		apppkg:             b.AppPkg,
-		clientpkg:          "client",
+		clientpkg:          b.ClientPkg,
 		validatorpkg:       b.ValidatorPkg,
 		methods:            make(map[string]string),
 		methodPayloadType:  make(map[string]string),
@@ -130,82 +130,100 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 }
 
 func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
-	buf := bytes.Buffer{}
-
-	fmt.Fprintf(&buf, `func http%s(w http.ResponseWriter, r *http.Response) {`+"\n", name)
-	method := strings.ToLower(l.Method)
-	if method == "" {
-		method = "get"
-	}
-	buf.WriteString("if strings.ToLower(r.Method) != `")
-	fmt.Fprintf(&buf, "%s", method)
-	buf.WriteString("` {\nhttp.Error(w, `Not Found`, http.StatusNotFound)\n}\n")
-
-	if v := ctx.requestValidators[name]; v != nil {
-		payloadType := ctx.methodPayloadType[name]
-		if method == "get" {
-			// If this is a get request, then we'd have to assemble
-			// the incoming data from r.Form
-			if payloadType == "interface{}" {
-				buf.WriteString("\nvar payload map[string]interface{}")
-				for k, v := range l.Schema.Properties {
-					if !v.IsResolved() {
-						rv, err := v.Resolve(ctx.schema)
-						if err != nil {
-							return "", err
-						}
-						v = rv
-					}
-
-					if len(v.Type) != 1 {
-						return "", errors.New("'" + name + "' can't handle input parameters unless the type contains exactly 1 type")
-					}
-
-					switch v.Type[0] {
-					case schema.IntegerType:
-						fmt.Fprintf(&buf, "\nv, err := getInteger(r.Forms, %s)", strconv.Quote(k))
-						fmt.Fprintf(&buf, `i
-if err != nil {
-	http.Error(w, "Invalid parameter " + %s, http.StatusInternalServerError)
-	return
-}
-`, strconv.Quote(k))
-					case schema.StringType:
-						fmt.Fprintf(&buf, "\nv := r.Forms[%s]", strconv.Quote(k))
-					}
-					buf.WriteString(`
-switch len(v) {
-case 0:
-	continue
-case 1:
-	payload[k] = v[0]
-default:
-	payload[k] = v
-}
-`)
-				}
+	intype := "interface{}"
+	outtype := ""
+	if s := l.Schema; s != nil {
+		if !s.IsResolved() {
+			rs, err := s.Resolve(ctx.schema)
+			if err != nil {
+				return "", err
 			}
-		} else {
-			buf.WriteString("\nvar payload ")
-			if genutil.LooksLikeStruct(payloadType) {
-				buf.WriteRune('*')
-			}
-			buf.WriteString(payloadType)
+			s = rs
 		}
-		buf.WriteString("\nif err := json.NewDecoder(r.Body).Decode(payload); err != nil {")
-		buf.WriteString("\nhttp.Error(w, `Invalid input`, http.StatusInternalServerError)")
-		buf.WriteString("\nreturn")
-		buf.WriteString("\n}")
-		fmt.Fprintf(&buf, "\n\nif err := %s.%s.Validate(payload); err != nil {", ctx.validatorpkg, v.Name)
-		buf.WriteString("\nhttp.Error(w, `Invalid input`, http.StatusInternalServerError)")
-		buf.WriteString("\nreturn")
-		buf.WriteString("\n}")
+		if t, ok := s.Extras["gotype"]; ok {
+			if ts, ok := t.(string); ok {
+				intype = ts
+			}
+		}
+	}
+	if s := l.TargetSchema; s != nil {
+		if !s.IsResolved() {
+			rs, err := s.Resolve(ctx.schema)
+			if err != nil {
+				return "", err
+			}
+			s = rs
+		}
+		outtype = "interface{}"
+		if t, ok := s.Extras["gotype"]; ok {
+			if ts, ok := t.(string); ok {
+				outtype = ts
+			}
+		}
+	}
+	buf := bytes.Buffer{}
+	fmt.Fprintf(&buf, `func (c *Client) %s(in `, name)
+
+	if genutil.LooksLikeStruct(intype) {
+		buf.WriteRune('*')
+	}
+	fmt.Fprintf(&buf, `%s) `, intype)
+
+	if outtype == "" {
+		buf.WriteString(`error {`)
+	} else {
+		prefix := ""
+		if genutil.LooksLikeStruct(outtype) {
+			prefix = "*"
+		}
+
+		fmt.Fprintf(&buf, `(%s%s, error) {`, prefix, outtype)
 	}
 
-	fmt.Fprintf(&buf, "\ndo%s(context.Background(), w, r, payload)", name)
-	buf.WriteString("\n}\n")
+	errbuf := bytes.Buffer{}
+	errbuf.WriteString("\nif err != nil {")
+	if outtype == "" {
+		errbuf.WriteString("\nreturn err")
+	} else {
+		errbuf.WriteString("\nreturn nil, err")
+	}
+	errbuf.WriteString("\n}")
+	errout := errbuf.String()
 
-log.Printf(buf.String())
+	fmt.Fprintf(&buf, "\n"+`u, err := url.Parse(c.BaseURL + %s)`, strconv.Quote(l.Path()))
+	buf.WriteString(errout)
+
+	buf.WriteString("\n" + `buf := bytes.Buffer{}`)
+	buf.WriteString("\n" + `err = json.NewEncoder(&buf).Encode(in)`)
+	buf.WriteString(errout)
+
+	switch strings.ToLower(l.Method) {
+	case "get":
+		buf.WriteString("\n" + `res, err := c.Client.Get(u.String())`)
+		buf.WriteString(errout)
+	case "post":
+		buf.WriteString("\n" + `res, err := c.Client.Post(u.String(), "text/json", &buf)`)
+		buf.WriteString(errout)
+	}
+	buf.WriteString("\nif res.StatusCode != http.StatusOK {")
+	buf.WriteString("\nreturn ")
+	if outtype != "nil" {
+		buf.WriteString("nil, ")
+	}
+	buf.WriteString("fmt.Errorf(`Invalid response: '%%s'`, res.Status)")
+	buf.WriteString("\n}")
+	if outtype != "" {
+		buf.WriteString("\nvar payload ")
+		if genutil.LooksLikeStruct(outtype) {
+			buf.WriteRune('*')
+		}
+		buf.WriteString(outtype)
+		buf.WriteString("\nerr := json.NewDecoder(res.Body).Decode(payload)")
+		buf.WriteString(errout)
+		buf.WriteString("\nreturn payload, nil")
+	}
+	buf.WriteString("\n}")
+
 	return buf.String(), nil
 }
 
@@ -219,15 +237,10 @@ func generateFile(ctx *genctx, fn string, cb func(io.Writer, *genctx) error) err
 	return cb(f, ctx)
 }
 
-func generateFiles(ctxif interface{}) error {
-	ctx, ok := ctxif.(*genctx)
-	if !ok {
-		return errors.New("expected genctx type")
-	}
-
+func generateFiles(ctx *genctx) error {
 	{
-		fn := filepath.Join(ctx.apppkg, fmt.Sprintf("%s.go", ctx.apppkg))
-		if err := generateFile(ctx, fn, generateServerCode); err != nil {
+		fn := filepath.Join(ctx.apppkg, "client", "client.go")
+		if err := generateFile(ctx, fn, generateClientCode); err != nil {
 			return err
 		}
 	}
@@ -242,87 +255,34 @@ func generateFiles(ctxif interface{}) error {
 	return nil
 }
 
-func generateServerCode(out io.Writer, ctx *genctx) error {
+func generateClientCode(out io.Writer, ctx *genctx) error {
 	buf := bytes.Buffer{}
 
-	fmt.Fprintf(&buf, "package %s\n\n", ctx.apppkg)
+	fmt.Fprintf(&buf, `package %s`, ctx.clientpkg)
+	buf.WriteString("\n\n")
 
 	genutil.WriteImports(
 		&buf,
-		[]string{
-			"net/http",
-			"strings",
-		},
-		[]string{
-			"github.com/gorilla/mux",
-			"golang.org/x/context",
-		},
+		[]string{"bytes", "encoding/json", "fmt", "net/http", "net/url"},
+		nil,
 	)
 
-	buf.WriteString(`
-type Server struct {
-	*mux.Router
-}
-
-func New() *Server {
-	s := &Server{
-		Router: mux.NewRouter(),
+	// for each endpoint, create a method that accepts
+	for _, method := range ctx.methods {
+		fmt.Fprint(&buf, method)
+		fmt.Fprint(&buf, "\n\n")
 	}
-	s.SetupRoutes()
-	return s
-}
-
-func getInteger(v url.Values, f string) ([]int64, error) {
-	x, ok := v[f]
-	if !ok {
-		return nil, nil
-	}
-
-	ret := make([]int64, len(x))
-	for i, e := range x {
-		p, err := strconv.ParseInt(e, 10, 64)
-		if err != nil {
-			return nil, err
-		}
-		ret[i] = p
-	}
-
-	return ret, nil
-}
-
-
-
-`)
-
-	for _, methodName := range ctx.methodNames {
-		buf.WriteString(ctx.methods[methodName])
-		buf.WriteString("\n")
-	}
-
-	buf.WriteString("func (s *Server) SetupRoutes() {")
-	buf.WriteString("\nr := s.Router")
-	paths := make([]string, 0, len(ctx.pathToMethods))
-	for path := range ctx.pathToMethods {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	for _, path := range paths {
-		method := ctx.pathToMethods[path]
-		fmt.Fprintf(&buf, "\nr.HandleFunc(`%s`, %s)", path, method)
-	}
-	buf.WriteString("\n}\n")
 
 	fsrc, err := format.Source(buf.Bytes())
 	if err != nil {
 		return err
 	}
-
 	if _, err := out.Write(fsrc); err != nil {
 		return err
 	}
+
 	return nil
 }
-
 func generateValidatorCode(out io.Writer, ctx *genctx) error {
 	g := jsval.NewGenerator()
 	validators := make([]*jsval.JSVal, 0, len(ctx.requestValidators)+len(ctx.responseValidators))

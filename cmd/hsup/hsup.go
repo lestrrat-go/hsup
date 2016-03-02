@@ -27,6 +27,8 @@ func _main() int {
 	switch opts.Flavor {
 	case "nethttp":
 		cb = doNetHTTP
+	case "httpclient":
+		cb = doHTTPClient
 	default:
 		log.Printf("unknown argument to `flavor`: %s", opts.Flavor)
 		return 1
@@ -41,6 +43,14 @@ func _main() int {
 
 func doNetHTTP(opts options) error {
 	b := hsup.NetHTTP
+	if err := b.ProcessFile(opts.Schema); err != nil {
+		return err
+	}
+	return nil
+}
+
+func doHTTPClient(opts options) error {
+	b := hsup.HTTPClient
 	if err := b.ProcessFile(opts.Schema); err != nil {
 		return err
 	}

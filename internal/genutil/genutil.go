@@ -8,7 +8,20 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/lestrrat/go-jsschema"
+	"github.com/lestrrat/go-jsval"
+	"github.com/lestrrat/go-jsval/builder"
 )
+
+var rxif = regexp.MustCompile(`\s*interface\s*{\s*}\s*`)
+
+func LooksLikeStruct(s string) bool {
+	if rxif.MatchString(s) {
+		return false
+	}
+	return !strings.HasPrefix(s, "[]") && !strings.HasPrefix(s, "map[")
+}
 
 var wsrx = regexp.MustCompile(`\s+`)
 
@@ -19,6 +32,16 @@ func TitleToName(s string) string {
 		buf.WriteString(p[1:])
 	}
 	return buf.String()
+}
+
+func MakeValidator(s *schema.Schema, ctx interface{}) (*jsval.JSVal, error) {
+	b := builder.New()
+	v, err := b.BuildWithCtx(s, ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return v, nil
 }
 
 func WriteImports(out io.Writer, stdlibs, extlibs []string) error {
