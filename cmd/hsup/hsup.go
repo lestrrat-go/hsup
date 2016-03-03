@@ -19,7 +19,7 @@ type options struct {
 	PkgPath   string
 	AppPkg    string   `short:"a" long:"apppkg" description:"Application package name"`
 	Schema    string   `short:"s" long:"schema" required:"true" description:"schema file to process"`
-	Flavor    []string `short:"f" long:"flavor" default:"nethttp" description:"what type of code to generate"`
+	Flavor    []string `short:"f" long:"flavor" default:"nethttp" default:"validator" default:"httpclient" description:"what type of code to generate"`
 	Overwrite bool     `short:"O" long:"overwrite" default:"false" description:"overwrite if file exists"`
 }
 
@@ -69,6 +69,8 @@ func _main() int {
 			cb = doNetHTTP
 		case "httpclient":
 			cb = doHTTPClient
+		case "validator":
+			cb = doValidator
 		default:
 			log.Printf("unknown argument to `flavor`: %s", opts.Flavor)
 			return 1
@@ -103,3 +105,15 @@ func doHTTPClient(opts options) error {
 	}
 	return nil
 }
+
+func doValidator(opts options) error {
+	b := hsup.Validator
+	b.AppPkg = opts.AppPkg
+	b.PkgPath = opts.PkgPath
+	b.Overwrite = opts.Overwrite
+	if err := b.ProcessFile(opts.Schema); err != nil {
+		return err
+	}
+	return nil
+}
+

@@ -14,39 +14,30 @@ import (
 
 	"github.com/lestrrat/go-hsup/ext"
 	"github.com/lestrrat/go-hsup/internal/genutil"
+	"github.com/lestrrat/go-hsup/internal/parser"
 	"github.com/lestrrat/go-jshschema"
-	"github.com/lestrrat/go-jsval"
-	"github.com/lestrrat/go-pdebug"
 )
 
 type Builder struct {
-	AppPkg       string
-	ClientPkg    string
-	Overwrite    bool
-	PkgPath      string
-	ValidatorPkg string
+	AppPkg    string
+	ClientPkg string
+	Overwrite bool
+	PkgPath   string
 }
 
 type genctx struct {
-	apppkg             string
-	schema             *hschema.HyperSchema
-	clientpkg          string
-	validatorpkg       string
-	methods            map[string]string
-	methodPayloadType  map[string]string
-	methodNames        []string
-	overwrite          bool
-	pathToMethods      map[string]string
-	pkgpath            string
-	requestValidators  map[string]*jsval.JSVal
-	responseValidators map[string]*jsval.JSVal
+	*parser.Result
+	AppPkg    string
+	ClientPkg string
+	Overwrite bool
+	PkgPath   string
 }
 
 func New() *Builder {
 	return &Builder{
-		ClientPkg:    "client",
-		Overwrite:    false,
-		ValidatorPkg: "validator",
+		AppPkg:    "app",
+		ClientPkg: "client",
+		Overwrite: false,
 	}
 }
 
@@ -61,18 +52,10 @@ func (b *Builder) ProcessFile(f string) error {
 
 func (b *Builder) Process(s *hschema.HyperSchema) error {
 	ctx := genctx{
-		schema:             s,
-		apppkg:             b.AppPkg,
-		clientpkg:          b.ClientPkg,
-		methods:            make(map[string]string),
-		methodPayloadType:  make(map[string]string),
-		methodNames:        make([]string, len(s.Links)),
-		overwrite:          b.Overwrite,
-		pkgpath:            b.PkgPath,
-		pathToMethods:      make(map[string]string),
-		requestValidators:  make(map[string]*jsval.JSVal),
-		responseValidators: make(map[string]*jsval.JSVal),
-		validatorpkg:       b.ValidatorPkg,
+		AppPkg:    b.AppPkg,
+		ClientPkg: b.ClientPkg,
+		Overwrite: b.Overwrite,
+		PkgPath:   b.PkgPath,
 	}
 
 	if err := parse(&ctx, s); err != nil {
@@ -88,52 +71,22 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 }
 
 func parse(ctx *genctx, s *hschema.HyperSchema) error {
-	for i, link := range s.Links {
-		methodName := genutil.TitleToName(link.Title)
-		ctx.methodPayloadType[methodName] = "interface{}"
+	pres, err := parser.Parse(s)
+	if err != nil {
+		return err
+	}
+	ctx.Result = pres
 
-		// Got to do this first, because validators are used in makeMethod()
-		if s := link.Schema; s != nil {
-			v, err := genutil.MakeValidator(s, ctx.schema)
-			if err != nil {
-				return err
-			}
-			v.Name = fmt.Sprintf("HTTP%sRequest", methodName)
-			ctx.requestValidators[methodName] = v
-		}
-		if s := link.TargetSchema; s != nil {
-			v, err := genutil.MakeValidator(s, ctx.schema)
-			if err != nil {
-				return err
-			}
-			v.Name = fmt.Sprintf("HTTP%sResponse", methodName)
-			ctx.responseValidators[methodName] = v
-		}
-		if ls := link.Schema; ls != nil {
-			if !ls.IsResolved() {
-				rs, err := ls.Resolve(ctx.schema)
-				if err != nil {
-					return err
-				}
-				ls = rs
-			}
-			if pdebug.Enabled {
-				pdebug.Printf("checking extras for %s: %#v", link.Path(), ls.Extras)
-			}
-			if gt, ok := ls.Extras[ext.TypeKey]; ok {
-				ctx.methodPayloadType[methodName] = gt.(string)
-			}
-		}
-		ctx.methodNames[i] = methodName
-		ctx.pathToMethods[link.Path()] = methodName
+	for _, link := range s.Links {
+		methodName := genutil.TitleToName(link.Title)
 		methodBody, err := makeMethod(ctx, methodName, link)
 		if err != nil {
 			return err
 		}
-		ctx.methods[methodName] = methodBody
+		ctx.Methods[methodName] = methodBody
 	}
 
-	sort.Strings(ctx.methodNames)
+	sort.Strings(ctx.MethodNames)
 	return nil
 }
 
@@ -142,7 +95,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	outtype := ""
 	if s := l.Schema; s != nil {
 		if !s.IsResolved() {
-			rs, err := s.Resolve(ctx.schema)
+			rs, err := s.Resolve(ctx.Schema)
 			if err != nil {
 				return "", err
 			}
@@ -156,7 +109,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	}
 	if s := l.TargetSchema; s != nil {
 		if !s.IsResolved() {
-			rs, err := s.Resolve(ctx.schema)
+			rs, err := s.Resolve(ctx.Schema)
 			if err != nil {
 				return "", err
 			}
@@ -237,7 +190,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 
 func generateFile(ctx *genctx, fn string, cb func(io.Writer, *genctx) error) error {
 	if _, err := os.Stat(fn); err == nil {
-		if !ctx.overwrite {
+		if !ctx.Overwrite {
 			log.Printf(" - File '%s' already exists. Skipping", fn)
 			return nil
 		}
@@ -255,15 +208,8 @@ func generateFile(ctx *genctx, fn string, cb func(io.Writer, *genctx) error) err
 
 func generateFiles(ctx *genctx) error {
 	{
-		fn := filepath.Join(ctx.apppkg, "client", "client.go")
+		fn := filepath.Join(ctx.AppPkg, "client", "client.go")
 		if err := generateFile(ctx, fn, generateClientCode); err != nil {
-			return err
-		}
-	}
-
-	{
-		fn := filepath.Join(ctx.apppkg, ctx.validatorpkg, fmt.Sprintf("%s.go", ctx.validatorpkg))
-		if err := generateFile(ctx, fn, generateValidatorCode); err != nil {
 			return err
 		}
 	}
@@ -274,8 +220,8 @@ func generateFiles(ctx *genctx) error {
 func generateClientCode(out io.Writer, ctx *genctx) error {
 	buf := bytes.Buffer{}
 
-	fmt.Fprintf(&buf, `package %s`, ctx.clientpkg)
-	buf.WriteString("\n\n")
+	genutil.WriteDoNotEdit(&buf)
+	fmt.Fprintf(&buf, "package %s\n\n", ctx.ClientPkg)
 
 	genutil.WriteImports(
 		&buf,
@@ -284,7 +230,7 @@ func generateClientCode(out io.Writer, ctx *genctx) error {
 	)
 
 	// for each endpoint, create a method that accepts
-	for _, method := range ctx.methods {
+	for _, method := range ctx.Methods {
 		fmt.Fprint(&buf, method)
 		fmt.Fprint(&buf, "\n\n")
 	}
@@ -293,42 +239,6 @@ func generateClientCode(out io.Writer, ctx *genctx) error {
 	if err != nil {
 		return err
 	}
-	if _, err := out.Write(fsrc); err != nil {
-		return err
-	}
-
-	return nil
-}
-func generateValidatorCode(out io.Writer, ctx *genctx) error {
-	g := jsval.NewGenerator()
-	validators := make([]*jsval.JSVal, 0, len(ctx.requestValidators)+len(ctx.responseValidators))
-	for _, v := range ctx.requestValidators {
-		validators = append(validators, v)
-	}
-	for _, v := range ctx.responseValidators {
-		validators = append(validators, v)
-	}
-
-	buf := bytes.Buffer{}
-	buf.WriteString("package " + ctx.validatorpkg + "\n\n")
-
-	genutil.WriteImports(
-		&buf,
-		nil,
-		[]string{
-			"github.com/lestrrat/go-jsval",
-		},
-	)
-	if err := g.Process(&buf, validators...); err != nil {
-		return err
-	}
-	buf.WriteString("\n\n")
-
-	fsrc, err := format.Source(buf.Bytes())
-	if err != nil {
-		return err
-	}
-
 	if _, err := out.Write(fsrc); err != nil {
 		return err
 	}

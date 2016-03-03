@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"go/format"
 	"io"
 	"log"
 	"os"
@@ -12,14 +11,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/lestrrat/go-hsup/ext"
 	"github.com/lestrrat/go-hsup/internal/genutil"
+	"github.com/lestrrat/go-hsup/internal/parser"
 	"github.com/lestrrat/go-jshschema"
 	"github.com/lestrrat/go-jsschema"
-	"github.com/lestrrat/go-jsval"
-	"github.com/lestrrat/go-pdebug"
 )
 
 type Builder struct {
@@ -30,20 +27,11 @@ type Builder struct {
 }
 
 type genctx struct {
-	apppkg              string
-	schema              *hschema.HyperSchema
-	clientpkg           string
-	validatorpkg        string
-	methods             map[string]string
-	methodNames         []string
-	methodWrappers      map[string][]string
-	overwrite           bool
-	pathToMethods       map[string]string
-	pkgpath             string
-	requestPayloadType  map[string]string
-	requestValidators   map[string]*jsval.JSVal
-	responsePayloadType map[string]string
-	responseValidators  map[string]*jsval.JSVal
+	*parser.Result
+	AppPkg       string
+	Overwrite    bool
+	PkgPath      string
+	ValidatorPkg string
 }
 
 func New() *Builder {
@@ -72,19 +60,10 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 	}
 
 	ctx := genctx{
-		schema:              s,
-		methodNames:         make([]string, len(s.Links)),
-		apppkg:              b.AppPkg,
-		methods:             make(map[string]string),
-		methodWrappers:      make(map[string][]string),
-		overwrite:           b.Overwrite,
-		pathToMethods:       make(map[string]string),
-		pkgpath:             b.PkgPath,
-		requestPayloadType:  make(map[string]string),
-		requestValidators:   make(map[string]*jsval.JSVal),
-		responseValidators:  make(map[string]*jsval.JSVal),
-		responsePayloadType: make(map[string]string),
-		validatorpkg:        b.ValidatorPkg,
+		AppPkg:       b.AppPkg,
+		Overwrite:    b.Overwrite,
+		PkgPath:      b.PkgPath,
+		ValidatorPkg: b.ValidatorPkg,
 	}
 
 	if err := parse(&ctx, s); err != nil {
@@ -100,70 +79,25 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 }
 
 func parse(ctx *genctx, s *hschema.HyperSchema) error {
-	for i, link := range s.Links {
+	pres, err := parser.Parse(s)
+	if err != nil {
+		return err
+	}
+	ctx.Result = pres
+
+	for _, link := range s.Links {
 		methodName := genutil.TitleToName(link.Title)
-		ctx.requestPayloadType[methodName] = "interface{}"
-
-		// Got to do this first, because validators are used in makeMethod()
-		if ls := link.Schema; ls != nil {
-			if !ls.IsResolved() {
-				rs, err := ls.Resolve(ctx.schema)
-				if err != nil {
-					return err
-				}
-				ls = rs
-			}
-			v, err := genutil.MakeValidator(ls, ctx.schema)
-			if err != nil {
-				return err
-			}
-			if gt, ok := ls.Extras[ext.TypeKey]; ok {
-				ctx.requestPayloadType[methodName] = gt.(string)
-			}
-			v.Name = fmt.Sprintf("HTTP%sRequest", methodName)
-			ctx.requestValidators[methodName] = v
-		}
-		if ls := link.TargetSchema; ls != nil {
-			if !ls.IsResolved() {
-				rs, err := ls.Resolve(ctx.schema)
-				if err != nil {
-					return err
-				}
-				ls = rs
-			}
-			v, err := genutil.MakeValidator(ls, ctx.schema)
-			if err != nil {
-				return err
-			}
-			if gt, ok := ls.Extras[ext.TypeKey]; ok {
-				ctx.responsePayloadType[methodName] = gt.(string)
-			}
-			v.Name = fmt.Sprintf("HTTP%sResponse", methodName)
-			ctx.responseValidators[methodName] = v
-		}
-
-		if ls := link.Schema; ls != nil {
-			if pdebug.Enabled {
-				pdebug.Printf("checking extras for %s: %#v", link.Path(), ls.Extras)
-			}
-			if gt, ok := ls.Extras[ext.TypeKey]; ok {
-				ctx.requestPayloadType[methodName] = gt.(string)
-			}
-		}
-
-		ctx.methodNames[i] = methodName
-		ctx.pathToMethods[link.Path()] = methodName
 		methodBody, err := makeMethod(ctx, methodName, link)
 		if err != nil {
 			return err
 		}
-		ctx.methods[methodName] = methodBody
-		if m := link.Extras; m != nil {
+		ctx.Methods[methodName] = methodBody
+		if m := link.Extras; len(m) > 0 {
 			w, ok := m[ext.WrapperKey]
 			if ok {
 				switch w.(type) {
 				case string:
-					ctx.methodWrappers[methodName] = []string{w.(string)}
+					ctx.MethodWrappers[methodName] = []string{w.(string)}
 				case []interface{}:
 					wl := w.([]interface{})
 					if len(wl) > 0 {
@@ -176,7 +110,7 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 								return errors.New("wrapper elements must be strings")
 							}
 						}
-						ctx.methodWrappers[methodName] = rl
+						ctx.MethodWrappers[methodName] = rl
 					}
 				default:
 					return errors.New("wrapper must be a string, or an array of strings")
@@ -185,7 +119,6 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 		}
 	}
 
-	sort.Strings(ctx.methodNames)
 	return nil
 }
 
@@ -201,8 +134,8 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	fmt.Fprintf(&buf, "%s", method)
 	buf.WriteString("` {\nhttp.Error(w, `Not Found`, http.StatusNotFound)\n}\n")
 
-	if v := ctx.requestValidators[name]; v != nil {
-		payloadType := ctx.requestPayloadType[name]
+	if v := ctx.RequestValidators[name]; v != nil {
+		payloadType := ctx.RequestPayloadType[name]
 		if method == "get" {
 			// If this is a get request, then we'd have to assemble
 			// the incoming data from r.Form
@@ -214,7 +147,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 				buf.WriteString("\npayload := make(map[string]interface{})")
 				for k, v := range l.Schema.Properties {
 					if !v.IsResolved() {
-						rv, err := v.Resolve(ctx.schema)
+						rv, err := v.Resolve(ctx.Schema)
 						if err != nil {
 							return "", err
 						}
@@ -262,14 +195,14 @@ default:
 			buf.WriteString("\nreturn")
 			buf.WriteString("\n}")
 		}
-		fmt.Fprintf(&buf, "\n\nif err := %s.%s.Validate(payload); err != nil {", ctx.validatorpkg, v.Name)
+		fmt.Fprintf(&buf, "\n\nif err := %s.%s.Validate(payload); err != nil {", ctx.ValidatorPkg, v.Name)
 		buf.WriteString("\nhttp.Error(w, `Invalid input`, http.StatusInternalServerError)")
 		buf.WriteString("\nreturn")
 		buf.WriteString("\n}")
 	}
 
 	fmt.Fprintf(&buf, "\ndo%s(context.Background(), w, r", name)
-	if _, ok := ctx.requestValidators[name]; ok {
+	if _, ok := ctx.RequestValidators[name]; ok {
 		buf.WriteString(`, payload`)
 	}
 	buf.WriteString(`)`)
@@ -280,7 +213,7 @@ default:
 
 func generateFile(ctx *genctx, fn string, cb func(io.Writer, *genctx) error) error {
 	if _, err := os.Stat(fn); err == nil {
-		if !ctx.overwrite {
+		if !ctx.Overwrite {
 			log.Printf(" - File '%s' already exists. Skipping", fn)
 			return nil
 		}
@@ -303,35 +236,28 @@ func generateFiles(ctxif interface{}) error {
 	}
 
 	{
-		fn := filepath.Join(ctx.apppkg, fmt.Sprintf("%s.go", ctx.apppkg))
+		fn := filepath.Join(ctx.AppPkg, fmt.Sprintf("%s.go", ctx.AppPkg))
 		if err := generateFile(ctx, fn, generateServerCode); err != nil {
 			return err
 		}
 	}
 
 	{
-		fn := filepath.Join(ctx.apppkg, "handlers.go")
+		fn := filepath.Join(ctx.AppPkg, "handlers.go")
 		if err := generateFile(ctx, fn, generateStubHandlerCode); err != nil {
 			return err
 		}
 	}
 
 	{
-		fn := filepath.Join(ctx.apppkg, ctx.validatorpkg, fmt.Sprintf("%s.go", ctx.validatorpkg))
-		if err := generateFile(ctx, fn, generateValidatorCode); err != nil {
-			return err
-		}
-	}
-
-	{
-		fn := filepath.Join(ctx.apppkg, "cmd", ctx.apppkg, fmt.Sprintf("%s.go", ctx.apppkg))
+		fn := filepath.Join(ctx.AppPkg, "cmd", ctx.AppPkg, fmt.Sprintf("%s.go", ctx.AppPkg))
 		if err := generateFile(ctx, fn, generateExecutableCode); err != nil {
 			return err
 		}
 	}
 
 	{
-		fn := filepath.Join(ctx.apppkg, "interface.go")
+		fn := filepath.Join(ctx.AppPkg, "interface.go")
 		if err := generateFile(ctx, fn, generateDataCode); err != nil {
 			return err
 		}
@@ -346,7 +272,7 @@ func generateExecutableCode(out io.Writer, ctx *genctx) error {
 	genutil.WriteImports(
 		&buf,
 		[]string{"log", "os"},
-		[]string{ctx.pkgpath, "github.com/jessevdk/go-flags"},
+		[]string{ctx.PkgPath, "github.com/jessevdk/go-flags"},
 	)
 
 	buf.WriteString(`type options struct {` + "\n")
@@ -361,32 +287,20 @@ func generateExecutableCode(out io.Writer, ctx *genctx) error {
 	}
 `)
 	buf.WriteString(`log.Printf("Server listening on %s", opts.Listen)` + "\n")
-	fmt.Fprintf(&buf, `if err := %s.Run(opts.Listen); err != nil {`+"\n", ctx.apppkg)
+	fmt.Fprintf(&buf, `if err := %s.Run(opts.Listen); err != nil {`+"\n", ctx.AppPkg)
 	buf.WriteString(` log.Printf("%s", err)
 		return 1
 	}
 	return 0
 }`)
 
-	fsrc, err := format.Source(buf.Bytes())
-	if err != nil {
-		log.Printf("Failed to cleanup Go code (probably a syntax error). Generating file anyway")
-		if _, err := buf.WriteTo(out); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if _, err := out.Write(fsrc); err != nil {
-		return err
-	}
-	return nil
+	return genutil.WriteFmtCode(out, &buf)
 }
 
 func generateStubHandlerCode(out io.Writer, ctx *genctx) error {
 	buf := bytes.Buffer{}
 
-	fmt.Fprintf(&buf, "package %s\n\n", ctx.apppkg)
+	fmt.Fprintf(&buf, "package %s\n\n", ctx.AppPkg)
 
 	genutil.WriteImports(
 		&buf,
@@ -398,11 +312,11 @@ func generateStubHandlerCode(out io.Writer, ctx *genctx) error {
 		},
 	)
 
-	for _, methodName := range ctx.methodNames {
-		payloadType := ctx.requestPayloadType[methodName]
+	for _, methodName := range ctx.MethodNames {
+		payloadType := ctx.RequestPayloadType[methodName]
 
 		fmt.Fprintf(&buf, "\nfunc do%s(ctx context.Context, w http.ResponseWriter, r *http.Request", methodName)
-		if _, ok := ctx.requestValidators[methodName]; ok {
+		if _, ok := ctx.RequestValidators[methodName]; ok {
 			buf.WriteString(`, payload `)
 			if genutil.LooksLikeStruct(payloadType) {
 				buf.WriteRune('*')
@@ -413,26 +327,14 @@ func generateStubHandlerCode(out io.Writer, ctx *genctx) error {
 		buf.WriteString("\n}\n")
 	}
 
-	fsrc, err := format.Source(buf.Bytes())
-	if err != nil {
-		log.Printf("Failed to cleanup Go code (probably a syntax error). Generating file anyway")
-		if _, err := buf.WriteTo(out); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if _, err := out.Write(fsrc); err != nil {
-		return err
-	}
-	return nil
+	return genutil.WriteFmtCode(out, &buf)
 }
 
 func generateServerCode(out io.Writer, ctx *genctx) error {
 	buf := bytes.Buffer{}
 
-	fmt.Fprintf(&buf, "// DO NOT EDIT. Automatically generated by hsup at %s\n", time.Now().Format(time.RFC1123))
-	fmt.Fprintf(&buf, "package %s\n\n", ctx.apppkg)
+	genutil.WriteDoNotEdit(&buf)
+	fmt.Fprintf(&buf, "package %s\n\n", ctx.AppPkg)
 
 	genutil.WriteImports(
 		&buf,
@@ -444,7 +346,7 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 			"strings",
 		},
 		[]string{
-			filepath.Join(ctx.pkgpath, "validator"),
+			filepath.Join(ctx.PkgPath, "validator"),
 			"github.com/gorilla/mux",
 			"golang.org/x/net/context",
 		},
@@ -487,97 +389,44 @@ func getInteger(v url.Values, f string) ([]int64, error) {
 
 `)
 
-	for _, methodName := range ctx.methodNames {
-		buf.WriteString(ctx.methods[methodName])
+	for _, methodName := range ctx.MethodNames {
+		buf.WriteString(ctx.Methods[methodName])
 		buf.WriteString("\n")
 	}
 
 	buf.WriteString("func (s *Server) SetupRoutes() {")
 	buf.WriteString("\nr := s.Router")
-	paths := make([]string, 0, len(ctx.pathToMethods))
-	for path := range ctx.pathToMethods {
+	paths := make([]string, 0, len(ctx.PathToMethods))
+	for path := range ctx.PathToMethods {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
 	for _, path := range paths {
-		method := ctx.pathToMethods[path]
+		method := ctx.PathToMethods[path]
 
 		fmt.Fprintf(&buf, "\nr.HandleFunc(`%s`, ", path)
-		for _, w := range ctx.methodWrappers[method] {
+		for _, w := range ctx.MethodWrappers[method] {
 			fmt.Fprintf(&buf, "%s(", w)
 		}
 		fmt.Fprintf(&buf, "http%s)", method)
-		for range ctx.methodWrappers[method] {
+		for range ctx.MethodWrappers[method] {
 			buf.WriteString(")")
 		}
 	}
 	buf.WriteString("\n}\n")
 
-	fsrc, err := format.Source(buf.Bytes())
-	if err != nil {
-		log.Printf("Failed to cleanup Go code (probably a syntax error). Generating file anyway")
-		if _, err := buf.WriteTo(out); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if _, err := out.Write(fsrc); err != nil {
-		return err
-	}
-	return nil
-}
-
-func generateValidatorCode(out io.Writer, ctx *genctx) error {
-	g := jsval.NewGenerator()
-	validators := make([]*jsval.JSVal, 0, len(ctx.requestValidators)+len(ctx.responseValidators))
-	for _, v := range ctx.requestValidators {
-		validators = append(validators, v)
-	}
-	for _, v := range ctx.responseValidators {
-		validators = append(validators, v)
-	}
-
-	buf := bytes.Buffer{}
-	buf.WriteString("package " + ctx.validatorpkg + "\n\n")
-
-	genutil.WriteImports(
-		&buf,
-		nil,
-		[]string{
-			"github.com/lestrrat/go-jsval",
-		},
-	)
-	if err := g.Process(&buf, validators...); err != nil {
-		return err
-	}
-	buf.WriteString("\n\n")
-
-	fsrc, err := format.Source(buf.Bytes())
-	if err != nil {
-		log.Printf("Failed to cleanup Go code (probably a syntax error). Generating file anyway")
-		if _, err := buf.WriteTo(out); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if _, err := out.Write(fsrc); err != nil {
-		return err
-	}
-
-	return nil
+	return genutil.WriteFmtCode(out, &buf)
 }
 
 func generateDataCode(out io.Writer, ctx *genctx) error {
 	buf := bytes.Buffer{}
-	fmt.Fprintf(&buf, `package %s`+"\n\n", ctx.apppkg)
+	fmt.Fprintf(&buf, `package %s`+"\n\n", ctx.AppPkg)
 
 	types := make(map[string]struct{})
-	for _, t := range ctx.requestPayloadType {
+	for _, t := range ctx.RequestPayloadType {
 		types[t] = struct{}{}
 	}
-	for _, t := range ctx.responsePayloadType {
+	for _, t := range ctx.ResponsePayloadType {
 		types[t] = struct{}{}
 	}
 
@@ -587,18 +436,5 @@ func generateDataCode(out io.Writer, ctx *genctx) error {
 		}
 	}
 
-	fsrc, err := format.Source(buf.Bytes())
-	if err != nil {
-		log.Printf("Failed to cleanup Go code (probably a syntax error). Generating file anyway")
-		if _, err := buf.WriteTo(out); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	if _, err := out.Write(fsrc); err != nil {
-		return err
-	}
-
-	return nil
+	return genutil.WriteFmtCode(out, &buf)
 }

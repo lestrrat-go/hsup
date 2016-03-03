@@ -9,6 +9,7 @@ package hsup
 import (
 	"github.com/lestrrat/go-hsup/httpclient"
 	"github.com/lestrrat/go-hsup/nethttp"
+	"github.com/lestrrat/go-hsup/validator"
 	"github.com/lestrrat/go-jshschema"
 )
 
@@ -25,3 +26,4 @@ var NetHTTP = nethttp.New()
 // net/http compliant code.
 var HTTPClient = httpclient.New()
 
+var Validator = validator.New()
