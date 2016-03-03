@@ -444,7 +444,7 @@ func generateDataCode(out io.Writer, ctx *genctx) error {
 	}
 
 	for t := range types {
-		t = strings.TrimPrefix(t, ctx.AppPkg + ".")
+		t = strings.TrimPrefix(t, ctx.AppPkg+".")
 		if genutil.LooksLikeStruct(t) {
 			fmt.Fprintf(&buf, "type %s struct {}\n", t)
 		}
@@ -470,15 +470,14 @@ func generateTestCode(out io.Writer, ctx *genctx) error {
 			"github.com/stretchr/testify/assert",
 		},
 	)
-	buf.WriteString("func TestBasicPaths(t *testing.T) {\n")
-	fmt.Fprintf(&buf, "ts := httptest.NewServer(%s.New())\n", ctx.AppPkg)
-	buf.WriteString(`defer ts.Close()
+	for _, methodName := range ctx.MethodNames {
+		fmt.Fprintf(&buf, "func Test%s(t *testing.T) {\n", methodName)
+		fmt.Fprintf(&buf, "ts := httptest.NewServer(%s.New())\n", ctx.AppPkg)
+		buf.WriteString(`defer ts.Close()
 
 `)
-	fmt.Fprintf(&buf, "cl := %s.New(ts.URL)\n", ctx.ClientPkg)
+		fmt.Fprintf(&buf, "cl := %s.New(ts.URL)\n", ctx.ClientPkg)
 
-	for _, methodName := range ctx.MethodNames {
-		buf.WriteString("{\n")
 		if pt, ok := ctx.RequestPayloadType[methodName]; ok {
 			buf.WriteString("var in ")
 			if genutil.LooksLikeStruct(pt) {
@@ -503,10 +502,8 @@ func generateTestCode(out io.Writer, ctx *genctx) error {
 			fmt.Fprintf(&buf, `if !assert.NoError(t, %s.HTTP%sResponse.Validate(res), "Validation should succeed") {`+"\n", ctx.ValidatorPkg, methodName)
 			buf.WriteString("return\n}\n")
 		}
-		buf.WriteString("}\n")
+		buf.WriteString("}\n\n")
 	}
-
-	buf.WriteString("}\n")
 
 	return genutil.WriteFmtCode(out, &buf)
 }
