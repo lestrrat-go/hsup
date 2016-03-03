@@ -167,7 +167,11 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 		buf.WriteString(errout)
 	}
 
-	switch strings.ToLower(l.Method) {
+	method := l.Method
+	if method == "" {
+		method = "get"
+	}
+	switch strings.ToLower(method) {
 	case "get":
 		buf.WriteString("\n" + `res, err := c.Client.Get(u.String())`)
 		buf.WriteString(errout)
