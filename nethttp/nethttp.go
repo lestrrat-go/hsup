@@ -143,7 +143,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 		if method == "get" {
 			// If this is a get request, then we'd have to assemble
 			// the incoming data from r.Form
-			if payloadType == "interface{}" {
+			if payloadType == "interface{}" || payloadType == "map[string]interface{}" {
 				buf.WriteString("\nif err := r.ParseForm(); err != nil {")
 				buf.WriteString("\nhttp.Error(w, `Failed to process query/post form`, http.StatusInternalServerError)")
 				buf.WriteString("\nreturn")

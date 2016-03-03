@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/lestrrat/go-hsup/ext"
 	"github.com/lestrrat/go-hsup/internal/genutil"
@@ -57,7 +58,15 @@ func parse(ctx *Result, s *hschema.HyperSchema) error {
 			if err != nil {
 				return err
 			}
-			ctx.RequestPayloadType[methodName] = "interface{}"	
+
+			if strings.ToLower(link.Method) == "get" {
+				// If the request is a GET request, then the input parameter
+				// will HAVE to be a map
+				ctx.RequestPayloadType[methodName] = "map[string]interface{}"
+			} else {
+				ctx.RequestPayloadType[methodName] = "interface{}"
+			}
+
 			if gt, ok := ls.Extras[ext.TypeKey]; ok {
 				ctx.RequestPayloadType[methodName] = gt.(string)
 			}
