@@ -91,7 +91,7 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 }
 
 func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
-	intype := "interface{}"
+	intype := ""
 	outtype := ""
 	if s := l.Schema; s != nil {
 		if !s.IsResolved() {
@@ -101,6 +101,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 			}
 			s = rs
 		}
+		intype = "interface{}"
 		if t, ok := s.Extras[ext.TypeKey]; ok {
 			if ts, ok := t.(string); ok {
 				intype = ts
@@ -122,13 +123,17 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 			}
 		}
 	}
-	buf := bytes.Buffer{}
-	fmt.Fprintf(&buf, `func (c *Client) %s(in `, name)
 
-	if genutil.LooksLikeStruct(intype) {
-		buf.WriteRune('*')
+	buf := bytes.Buffer{}
+	fmt.Fprintf(&buf, `func (c *Client) %s(`, name)
+	if intype != "" {
+		buf.WriteString("in ")
+		if genutil.LooksLikeStruct(intype) {
+			buf.WriteRune('*')
+		}
+		buf.WriteString(intype)
 	}
-	fmt.Fprintf(&buf, `%s) `, intype)
+	buf.WriteRune(')')
 
 	if outtype == "" {
 		buf.WriteString(`error {`)
@@ -141,6 +146,8 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 		fmt.Fprintf(&buf, `(%s%s, error) {`, prefix, outtype)
 	}
 
+	buf.WriteString("var err error")
+
 	errbuf := bytes.Buffer{}
 	errbuf.WriteString("\nif err != nil {")
 	if outtype == "" {
@@ -151,12 +158,14 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	errbuf.WriteString("\n}")
 	errout := errbuf.String()
 
-	fmt.Fprintf(&buf, "\n"+`u, err := url.Parse(c.BaseURL + %s)`, strconv.Quote(l.Path()))
+	fmt.Fprintf(&buf, "\n"+`u, err := url.Parse(c.Endpoint + %s)`, strconv.Quote(l.Path()))
 	buf.WriteString(errout)
 
-	buf.WriteString("\n" + `buf := bytes.Buffer{}`)
-	buf.WriteString("\n" + `err = json.NewEncoder(&buf).Encode(in)`)
-	buf.WriteString(errout)
+	if _, ok := ctx.RequestPayloadType[name]; ok {
+		buf.WriteString("\n" + `buf := bytes.Buffer{}`)
+		buf.WriteString("\n" + `err = json.NewEncoder(&buf).Encode(in)`)
+		buf.WriteString(errout)
+	}
 
 	switch strings.ToLower(l.Method) {
 	case "get":
@@ -168,18 +177,20 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	}
 	buf.WriteString("\nif res.StatusCode != http.StatusOK {")
 	buf.WriteString("\nreturn ")
-	if outtype != "nil" {
+	if outtype != "" {
 		buf.WriteString("nil, ")
 	}
-	buf.WriteString("fmt.Errorf(`Invalid response: '%%s'`, res.Status)")
+	buf.WriteString("fmt.Errorf(`Invalid response: '%s'`, res.Status)")
 	buf.WriteString("\n}")
-	if outtype != "" {
+	if outtype == "" {
+		buf.WriteString("\nreturn nil")
+	} else {
 		buf.WriteString("\nvar payload ")
 		if genutil.LooksLikeStruct(outtype) {
 			buf.WriteRune('*')
 		}
 		buf.WriteString(outtype)
-		buf.WriteString("\nerr := json.NewDecoder(res.Body).Decode(payload)")
+		buf.WriteString("\nerr = json.NewDecoder(res.Body).Decode(payload)")
 		buf.WriteString(errout)
 		buf.WriteString("\nreturn payload, nil")
 	}
@@ -226,11 +237,26 @@ func generateClientCode(out io.Writer, ctx *genctx) error {
 	genutil.WriteImports(
 		&buf,
 		[]string{"bytes", "encoding/json", "fmt", "net/http", "net/url"},
-		nil,
+		[]string{ctx.PkgPath},
 	)
 
+	buf.WriteString(`type Client struct {
+	Client *http.Client
+	Endpoint string
+}
+
+func New(s string) *Client {
+	return &Client{
+		Client: &http.Client{},
+		Endpoint: s,
+	}
+}
+
+`)
+
 	// for each endpoint, create a method that accepts
-	for _, method := range ctx.Methods {
+	for _, methodName := range ctx.MethodNames {
+		method := ctx.Methods[methodName]
 		fmt.Fprint(&buf, method)
 		fmt.Fprint(&buf, "\n\n")
 	}

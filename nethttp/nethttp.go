@@ -21,6 +21,7 @@ import (
 
 type Builder struct {
 	AppPkg       string
+	ClientPkg    string
 	Overwrite    bool
 	PkgPath      string
 	ValidatorPkg string
@@ -29,6 +30,7 @@ type Builder struct {
 type genctx struct {
 	*parser.Result
 	AppPkg       string
+	ClientPkg    string
 	Overwrite    bool
 	PkgPath      string
 	ValidatorPkg string
@@ -36,6 +38,7 @@ type genctx struct {
 
 func New() *Builder {
 	return &Builder{
+		ClientPkg:    "client",
 		Overwrite:    false,
 		ValidatorPkg: "validator",
 	}
@@ -61,6 +64,7 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 
 	ctx := genctx{
 		AppPkg:       b.AppPkg,
+		ClientPkg:    b.ClientPkg,
 		Overwrite:    b.Overwrite,
 		PkgPath:      b.PkgPath,
 		ValidatorPkg: b.ValidatorPkg,
@@ -186,6 +190,7 @@ default:
 			}
 		} else {
 			buf.WriteString("\nvar payload ")
+			payloadType = strings.TrimPrefix(payloadType, ctx.AppPkg+".")
 			if genutil.LooksLikeStruct(payloadType) {
 				buf.WriteRune('*')
 			}
@@ -263,6 +268,13 @@ func generateFiles(ctxif interface{}) error {
 		}
 	}
 
+	{
+		fn := filepath.Join(ctx.AppPkg, fmt.Sprintf("%s_test.go", ctx.AppPkg))
+		if err := generateFile(ctx, fn, generateTestCode); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -314,6 +326,7 @@ func generateStubHandlerCode(out io.Writer, ctx *genctx) error {
 
 	for _, methodName := range ctx.MethodNames {
 		payloadType := ctx.RequestPayloadType[methodName]
+		payloadType = strings.TrimPrefix(payloadType, ctx.AppPkg+".")
 
 		fmt.Fprintf(&buf, "\nfunc do%s(ctx context.Context, w http.ResponseWriter, r *http.Request", methodName)
 		if _, ok := ctx.RequestValidators[methodName]; ok {
@@ -431,10 +444,69 @@ func generateDataCode(out io.Writer, ctx *genctx) error {
 	}
 
 	for t := range types {
+		t = strings.TrimPrefix(t, ctx.AppPkg + ".")
 		if genutil.LooksLikeStruct(t) {
 			fmt.Fprintf(&buf, "type %s struct {}\n", t)
 		}
 	}
+
+	return genutil.WriteFmtCode(out, &buf)
+}
+
+func generateTestCode(out io.Writer, ctx *genctx) error {
+	buf := bytes.Buffer{}
+
+	fmt.Fprintf(&buf, "package %s_test\n\n", ctx.AppPkg)
+	genutil.WriteImports(
+		&buf,
+		[]string{
+			"testing",
+			"net/http/httptest",
+		},
+		[]string{
+			ctx.PkgPath,
+			filepath.Join(ctx.PkgPath, ctx.ClientPkg),
+			filepath.Join(ctx.PkgPath, ctx.ValidatorPkg),
+			"github.com/stretchr/testify/assert",
+		},
+	)
+	buf.WriteString("func TestBasicPaths(t *testing.T) {\n")
+	fmt.Fprintf(&buf, "ts := httptest.NewServer(%s.New())\n", ctx.AppPkg)
+	buf.WriteString(`defer ts.Close()
+
+`)
+	fmt.Fprintf(&buf, "cl := %s.New(ts.URL)\n", ctx.ClientPkg)
+
+	for _, methodName := range ctx.MethodNames {
+		buf.WriteString("{\n")
+		if pt, ok := ctx.RequestPayloadType[methodName]; ok {
+			buf.WriteString("var in ")
+			if genutil.LooksLikeStruct(pt) {
+				buf.WriteRune('*')
+			}
+			buf.WriteString(pt)
+			buf.WriteString("\n")
+		}
+		if _, ok := ctx.ResponsePayloadType[methodName]; ok {
+			buf.WriteString("res, ")
+		}
+
+		fmt.Fprintf(&buf, "err := cl.%s(", methodName)
+		if _, ok := ctx.RequestPayloadType[methodName]; ok {
+			buf.WriteString("in")
+		}
+		buf.WriteString(")\n")
+		fmt.Fprintf(&buf, `if !assert.NoError(t, err, "%s should succeed") {`+"\n", methodName)
+		buf.WriteString("return\n")
+		buf.WriteString("}\n")
+		if _, ok := ctx.ResponseValidators[methodName]; ok {
+			fmt.Fprintf(&buf, `if !assert.NoError(t, %s.HTTP%sResponse.Validate(res), "Validation should succeed") {`+"\n", ctx.ValidatorPkg, methodName)
+			buf.WriteString("return\n}\n")
+		}
+		buf.WriteString("}\n")
+	}
+
+	buf.WriteString("}\n")
 
 	return genutil.WriteFmtCode(out, &buf)
 }

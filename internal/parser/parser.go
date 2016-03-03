@@ -44,7 +44,6 @@ func Parse(s *hschema.HyperSchema) (*Result, error) {
 func parse(ctx *Result, s *hschema.HyperSchema) error {
 	for i, link := range s.Links {
 		methodName := genutil.TitleToName(link.Title)
-		ctx.RequestPayloadType[methodName] = "interface{}"
 		// Got to do this first, because validators are used in makeMethod()
 		if ls := link.Schema; ls != nil {
 			if !ls.IsResolved() {
@@ -58,6 +57,7 @@ func parse(ctx *Result, s *hschema.HyperSchema) error {
 			if err != nil {
 				return err
 			}
+			ctx.RequestPayloadType[methodName] = "interface{}"	
 			if gt, ok := ls.Extras[ext.TypeKey]; ok {
 				ctx.RequestPayloadType[methodName] = gt.(string)
 			}
@@ -76,6 +76,7 @@ func parse(ctx *Result, s *hschema.HyperSchema) error {
 			if err != nil {
 				return err
 			}
+			ctx.ResponsePayloadType[methodName] = "interface{}"
 			if gt, ok := ls.Extras[ext.TypeKey]; ok {
 				ctx.ResponsePayloadType[methodName] = gt.(string)
 			}
