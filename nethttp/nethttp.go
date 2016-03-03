@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lestrrat/go-hsup/ext"
 	"github.com/lestrrat/go-hsup/internal/genutil"
 	"github.com/lestrrat/go-jshschema"
 	"github.com/lestrrat/go-jsschema"
@@ -116,7 +117,7 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 			if err != nil {
 				return err
 			}
-			if gt, ok := ls.Extras["gotype"]; ok {
+			if gt, ok := ls.Extras[ext.TypeKey]; ok {
 				ctx.requestPayloadType[methodName] = gt.(string)
 			}
 			v.Name = fmt.Sprintf("HTTP%sRequest", methodName)
@@ -134,7 +135,7 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 			if err != nil {
 				return err
 			}
-			if gt, ok := ls.Extras["gotype"]; ok {
+			if gt, ok := ls.Extras[ext.TypeKey]; ok {
 				ctx.responsePayloadType[methodName] = gt.(string)
 			}
 			v.Name = fmt.Sprintf("HTTP%sResponse", methodName)
@@ -145,7 +146,7 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 			if pdebug.Enabled {
 				pdebug.Printf("checking extras for %s: %#v", link.Path(), ls.Extras)
 			}
-			if gt, ok := ls.Extras["gotype"]; ok {
+			if gt, ok := ls.Extras[ext.TypeKey]; ok {
 				ctx.requestPayloadType[methodName] = gt.(string)
 			}
 		}
@@ -158,7 +159,7 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 		}
 		ctx.methods[methodName] = methodBody
 		if m := link.Extras; m != nil {
-			w, ok := m["gowrapper"]
+			w, ok := m[ext.WrapperKey]
 			if ok {
 				switch w.(type) {
 				case string:

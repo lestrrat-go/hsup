@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lestrrat/go-hsup/ext"
 	"github.com/lestrrat/go-hsup/internal/genutil"
 	"github.com/lestrrat/go-jshschema"
 	"github.com/lestrrat/go-jsval"
@@ -119,7 +120,7 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 			if pdebug.Enabled {
 				pdebug.Printf("checking extras for %s: %#v", link.Path(), ls.Extras)
 			}
-			if gt, ok := ls.Extras["gotype"]; ok {
+			if gt, ok := ls.Extras[ext.TypeKey]; ok {
 				ctx.methodPayloadType[methodName] = gt.(string)
 			}
 		}
@@ -147,7 +148,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 			}
 			s = rs
 		}
-		if t, ok := s.Extras["gotype"]; ok {
+		if t, ok := s.Extras[ext.TypeKey]; ok {
 			if ts, ok := t.(string); ok {
 				intype = ts
 			}
@@ -162,7 +163,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 			s = rs
 		}
 		outtype = "interface{}"
-		if t, ok := s.Extras["gotype"]; ok {
+		if t, ok := s.Extras[ext.TypeKey]; ok {
 			if ts, ok := t.(string); ok {
 				outtype = ts
 			}

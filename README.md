@@ -22,3 +22,11 @@ Generate both the net/http based server and the http client
 hsup -s /path/to/hyper-schema.json -f nethttp -f httpclient
 ```
 
+# JSON Schema Additions
+
+Keys starting with `hsup.` are custom properties for hsup.
+
+| Key          | Type                   | Description |
+|:-------------|:-----------------------|:------------|
+| hsup.type    | string                 | When specified within a link schema or targetSchema, this type is used to Marshal/Unmarshal data |
+| hsup.wrapper | string, arrray(string) | When specified within a link, the named function is used to wrap the HandleFunc. The signature for the wrapper must be `func(http.HandleFunc) http.HandleeFunc` |
