@@ -19,11 +19,15 @@ import (
 
 var rxif = regexp.MustCompile(`\s*interface\s*{\s*}\s*`)
 
+func LooksLikeContainer(s string) bool {
+	return strings.HasPrefix(s, "[]") || strings.HasPrefix(s, "map[")
+}
+
 func LooksLikeStruct(s string) bool {
 	if rxif.MatchString(s) {
 		return false
 	}
-	return !strings.HasPrefix(s, "[]") && !strings.HasPrefix(s, "map[")
+	return !LooksLikeContainer(s)
 }
 
 var wsrx = regexp.MustCompile(`\s+`)
