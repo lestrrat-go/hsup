@@ -258,7 +258,7 @@ func generateFiles(ctxif interface{}) error {
 	// hsup system, so get forcefully overwritten
 	sysfiles := map[string]func(io.Writer, *genctx) error{
 		filepath.Join(ctx.AppPkg, fmt.Sprintf("%s_hsup.go", ctx.AppPkg)):     generateServerCode,
-		filepath.Join(ctx.AppPkg, fmt.Sprintf("%s_gen_test.go", ctx.AppPkg)): generateTestCode,
+		filepath.Join(ctx.AppPkg, fmt.Sprintf("%s_hsup_test.go", ctx.AppPkg)): generateTestCode,
 	}
 	for fn, cb := range sysfiles {
 		if err := generateFile(ctx, fn, cb, true); err != nil {
