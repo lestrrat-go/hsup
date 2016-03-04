@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -94,7 +95,11 @@ func parse(ctx *Result, s *hschema.HyperSchema) error {
 		}
 
 		ctx.MethodNames[i] = methodName
-		ctx.PathToMethods[link.Path()] = methodName
+		path := link.Path()
+		if strings.IndexRune(path, '{') > -1 {
+			return errors.New("found '{' in the URL. hsup does not support URI templates")
+		}
+		ctx.PathToMethods[path] = methodName
 
 	}
 	sort.Strings(ctx.MethodNames)

@@ -140,6 +140,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 
 	if v := ctx.RequestValidators[name]; v != nil {
 		payloadType := ctx.RequestPayloadType[name]
+
 		if method == "get" {
 			// If this is a get request, then we'd have to assemble
 			// the incoming data from r.Form
@@ -149,6 +150,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 				buf.WriteString("\nreturn")
 				buf.WriteString("\n}")
 				buf.WriteString("\npayload := make(map[string]interface{})")
+
 				for k, v := range l.Schema.Properties {
 					if !v.IsResolved() {
 						rv, err := v.Resolve(ctx.Schema)
@@ -216,13 +218,18 @@ default:
 	return buf.String(), nil
 }
 
-func generateFile(ctx *genctx, fn string, cb func(io.Writer, *genctx) error) error {
+func generateFile(ctx *genctx, fn string, cb func(io.Writer, *genctx) error, forceOverwrite bool) error {
 	if _, err := os.Stat(fn); err == nil {
 		if !ctx.Overwrite {
 			log.Printf(" - File '%s' already exists. Skipping", fn)
 			return nil
 		}
-		log.Printf(" * File '%s' already exists. Overwriting", fn)
+		if forceOverwrite {
+			log.Printf(" * File '%s' already exists. Overwriting", fn)
+		} else {
+			log.Printf(" - File '%s' already exists. This file cannot be overwritten, skipping", fn)
+			return nil
+		}
 	}
 
 	log.Printf(" + Generating file '%s'", fn)
@@ -240,37 +247,27 @@ func generateFiles(ctxif interface{}) error {
 		return errors.New("expected genctx type")
 	}
 
-	{
-		fn := filepath.Join(ctx.AppPkg, fmt.Sprintf("%s.go", ctx.AppPkg))
-		if err := generateFile(ctx, fn, generateServerCode); err != nil {
+	// these files are expected to be completely under control by the
+	// hsup system, so get forcefully overwritten
+	sysfiles := map[string]func(io.Writer, *genctx) error{
+		filepath.Join(ctx.AppPkg, fmt.Sprintf("%s.go", ctx.AppPkg)): generateServerCode,
+	}
+	for fn, cb := range sysfiles {
+		if err := generateFile(ctx, fn, cb, true); err != nil {
 			return err
 		}
 	}
 
-	{
-		fn := filepath.Join(ctx.AppPkg, "handlers.go")
-		if err := generateFile(ctx, fn, generateStubHandlerCode); err != nil {
-			return err
-		}
+	// these files are expected to be modified by the author, so do
+	// not get forcefully overwritten
+	userfiles := map[string]func(io.Writer, *genctx) error{
+		filepath.Join(ctx.AppPkg, "cmd", ctx.AppPkg, fmt.Sprintf("%s.go", ctx.AppPkg)): generateExecutableCode,
+		filepath.Join(ctx.AppPkg, "handlers.go"):                                       generateStubHandlerCode,
+		filepath.Join(ctx.AppPkg, "interface.go"):                                      generateDataCode,
+		filepath.Join(ctx.AppPkg, fmt.Sprintf("%s_test.go", ctx.AppPkg)):               generateTestCode,
 	}
-
-	{
-		fn := filepath.Join(ctx.AppPkg, "cmd", ctx.AppPkg, fmt.Sprintf("%s.go", ctx.AppPkg))
-		if err := generateFile(ctx, fn, generateExecutableCode); err != nil {
-			return err
-		}
-	}
-
-	{
-		fn := filepath.Join(ctx.AppPkg, "interface.go")
-		if err := generateFile(ctx, fn, generateDataCode); err != nil {
-			return err
-		}
-	}
-
-	{
-		fn := filepath.Join(ctx.AppPkg, fmt.Sprintf("%s_test.go", ctx.AppPkg))
-		if err := generateFile(ctx, fn, generateTestCode); err != nil {
+	for fn, cb := range userfiles {
+		if err := generateFile(ctx, fn, cb, false); err != nil {
 			return err
 		}
 	}
