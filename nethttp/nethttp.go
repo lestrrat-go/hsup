@@ -151,7 +151,14 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 				buf.WriteString("\n}")
 				buf.WriteString("\npayload := make(map[string]interface{})")
 
-				for k, v := range l.Schema.Properties {
+				pnames := make([]string, 0, len(l.Schema.Properties))
+				for k := range l.Schema.Properties {
+					pnames = append(pnames, k)
+				}
+				sort.Strings(pnames)
+
+				for _, k := range pnames {
+					v := l.Schema.Properties[k]
 					if !v.IsResolved() {
 						rv, err := v.Resolve(ctx.Schema)
 						if err != nil {
@@ -250,7 +257,8 @@ func generateFiles(ctxif interface{}) error {
 	// these files are expected to be completely under control by the
 	// hsup system, so get forcefully overwritten
 	sysfiles := map[string]func(io.Writer, *genctx) error{
-		filepath.Join(ctx.AppPkg, fmt.Sprintf("%s_hsup.go", ctx.AppPkg)): generateServerCode,
+		filepath.Join(ctx.AppPkg, fmt.Sprintf("%s_hsup.go", ctx.AppPkg)):     generateServerCode,
+		filepath.Join(ctx.AppPkg, fmt.Sprintf("%s_gen_test.go", ctx.AppPkg)): generateTestCode,
 	}
 	for fn, cb := range sysfiles {
 		if err := generateFile(ctx, fn, cb, true); err != nil {
@@ -264,7 +272,6 @@ func generateFiles(ctxif interface{}) error {
 		filepath.Join(ctx.AppPkg, "cmd", ctx.AppPkg, fmt.Sprintf("%s.go", ctx.AppPkg)): generateExecutableCode,
 		filepath.Join(ctx.AppPkg, "handlers.go"):                                       generateStubHandlerCode,
 		filepath.Join(ctx.AppPkg, "interface.go"):                                      generateDataCode,
-		filepath.Join(ctx.AppPkg, fmt.Sprintf("%s_test.go", ctx.AppPkg)):               generateTestCode,
 	}
 	for fn, cb := range userfiles {
 		if err := generateFile(ctx, fn, cb, false); err != nil {
