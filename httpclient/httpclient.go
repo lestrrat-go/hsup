@@ -190,17 +190,16 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 		buf.WriteString("\nreturn nil")
 	} else {
 		buf.WriteString("\nvar payload ")
-		if genutil.LooksLikeStruct(outtype) {
-			buf.WriteRune('*')
-		}
 		buf.WriteString(outtype)
 		buf.WriteString("\nerr = json.NewDecoder(res.Body).Decode(")
-		if genutil.LooksLikeContainer(outtype) {
-			buf.WriteString("&")
-		}
+		buf.WriteString("&")
 		buf.WriteString("payload)")
 		buf.WriteString(errout)
-		buf.WriteString("\nreturn payload, nil")
+		buf.WriteString("\nreturn ")
+		if genutil.LooksLikeStruct(outtype) {
+			buf.WriteString("&")
+		}
+		buf.WriteString("payload, nil")
 	}
 	buf.WriteString("\n}")
 

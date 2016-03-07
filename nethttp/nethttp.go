@@ -138,9 +138,8 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	fmt.Fprintf(&buf, "%s", method)
 	buf.WriteString("` {\nhttpError(w, `Method was ` + r.Method, http.StatusNotFound, nil)\n}\n")
 
+	payloadType := ctx.RequestPayloadType[name]
 	if v := ctx.RequestValidators[name]; v != nil {
-		payloadType := ctx.RequestPayloadType[name]
-
 		if method == "get" {
 			// If this is a get request, then we'd have to assemble
 			// the incoming data from r.Form
@@ -200,11 +199,8 @@ default:
 		} else {
 			buf.WriteString("\nvar payload ")
 			payloadType = strings.TrimPrefix(payloadType, ctx.AppPkg+".")
-			if genutil.LooksLikeStruct(payloadType) {
-				buf.WriteRune('*')
-			}
 			buf.WriteString(payloadType)
-			buf.WriteString("\nif err := json.NewDecoder(r.Body).Decode(payload); err != nil {")
+			buf.WriteString("\nif err := json.NewDecoder(r.Body).Decode(&payload); err != nil {")
 			buf.WriteString("\nhttpError(w, `Invalid input`, http.StatusInternalServerError, err)")
 			buf.WriteString("\nreturn")
 			buf.WriteString("\n}")
@@ -217,7 +213,11 @@ default:
 
 	fmt.Fprintf(&buf, "\ndo%s(context.Background(), w, r", name)
 	if _, ok := ctx.RequestValidators[name]; ok {
-		buf.WriteString(`, payload`)
+		buf.WriteString(`, `)
+		if genutil.LooksLikeStruct(payloadType) {
+			buf.WriteString("&")
+		}
+		buf.WriteString(`payload`)
 	}
 	buf.WriteString(`)`)
 	buf.WriteString("\n}\n")
