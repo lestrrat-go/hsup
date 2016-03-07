@@ -257,8 +257,7 @@ func generateFiles(ctxif interface{}) error {
 	// these files are expected to be completely under control by the
 	// hsup system, so get forcefully overwritten
 	sysfiles := map[string]func(io.Writer, *genctx) error{
-		filepath.Join(ctx.AppPkg, fmt.Sprintf("%s_hsup.go", ctx.AppPkg)):     generateServerCode,
-		filepath.Join(ctx.AppPkg, fmt.Sprintf("%s_hsup_test.go", ctx.AppPkg)): generateTestCode,
+		filepath.Join(ctx.AppPkg, fmt.Sprintf("%s_hsup.go", ctx.AppPkg)): generateServerCode,
 	}
 	for fn, cb := range sysfiles {
 		if err := generateFile(ctx, fn, cb, true); err != nil {
@@ -272,6 +271,7 @@ func generateFiles(ctxif interface{}) error {
 		filepath.Join(ctx.AppPkg, "cmd", ctx.AppPkg, fmt.Sprintf("%s.go", ctx.AppPkg)): generateExecutableCode,
 		filepath.Join(ctx.AppPkg, "handlers.go"):                                       generateStubHandlerCode,
 		filepath.Join(ctx.AppPkg, "interface.go"):                                      generateDataCode,
+		filepath.Join(ctx.AppPkg, "client_test.go"):                                    generateTestCode,
 	}
 	for fn, cb := range userfiles {
 		if err := generateFile(ctx, fn, cb, false); err != nil {

@@ -60,9 +60,10 @@ func parse(ctx *Result, s *hschema.HyperSchema) error {
 				return err
 			}
 
-			if strings.ToLower(link.Method) == "get" {
-				// If the request is a GET request, then the input parameter
-				// will HAVE to be a map
+			// If the request is a GET request or the encoding is
+			// 'application/x-www-form-urlencoded', then the input parameter
+			// will HAVE to be a map
+			if strings.ToLower(link.Method) == "get" || link.EncType == "application/x-www-form-urlencoded" {
 				ctx.RequestPayloadType[methodName] = "map[string]interface{}"
 			} else {
 				ctx.RequestPayloadType[methodName] = "interface{}"
