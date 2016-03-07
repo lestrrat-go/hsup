@@ -136,7 +136,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	}
 	buf.WriteString("if strings.ToLower(r.Method) != `")
 	fmt.Fprintf(&buf, "%s", method)
-	buf.WriteString("` {\nhttp.Error(w, `Not Found`, http.StatusNotFound)\n}\n")
+	buf.WriteString("` {\nhttpError(w, `Method was ` + r.Method, http.StatusNotFound, nil)\n}\n")
 
 	if v := ctx.RequestValidators[name]; v != nil {
 		payloadType := ctx.RequestPayloadType[name]
@@ -146,7 +146,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 			// the incoming data from r.Form
 			if payloadType == "interface{}" || payloadType == "map[string]interface{}" {
 				buf.WriteString("\nif err := r.ParseForm(); err != nil {")
-				buf.WriteString("\nhttp.Error(w, `Failed to process query/post form`, http.StatusInternalServerError)")
+				buf.WriteString("\nhttpError(w, `Failed to process query/post form`, http.StatusInternalServerError, nil)")
 				buf.WriteString("\nreturn")
 				buf.WriteString("\n}")
 				buf.WriteString("\npayload := make(map[string]interface{})")
@@ -178,7 +178,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 						fmt.Fprintf(&buf, "\nv, err := getInteger(r.Form, %s)", qk)
 						fmt.Fprintf(&buf, `
 if err != nil {
-	http.Error(w, "Invalid parameter " + %s, http.StatusInternalServerError)
+	httpError(w, "Invalid parameter " + %s, http.StatusInternalServerError, err)
 	return
 }
 `, strconv.Quote(k))
@@ -205,12 +205,12 @@ default:
 			}
 			buf.WriteString(payloadType)
 			buf.WriteString("\nif err := json.NewDecoder(r.Body).Decode(payload); err != nil {")
-			buf.WriteString("\nhttp.Error(w, `Invalid input`, http.StatusInternalServerError)")
+			buf.WriteString("\nhttpError(w, `Invalid input`, http.StatusInternalServerError, err)")
 			buf.WriteString("\nreturn")
 			buf.WriteString("\n}")
 		}
 		fmt.Fprintf(&buf, "\n\nif err := %s.%s.Validate(payload); err != nil {", ctx.ValidatorPkg, v.Name)
-		buf.WriteString("\nhttp.Error(w, `Invalid input`, http.StatusInternalServerError)")
+		buf.WriteString("\nhttpError(w, `Invalid input`, http.StatusInternalServerError, err)")
 		buf.WriteString("\nreturn")
 		buf.WriteString("\n}")
 	}
@@ -365,6 +365,7 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 		[]string{
 			filepath.Join(ctx.PkgPath, "validator"),
 			"github.com/gorilla/mux",
+			"github.com/lestrrat/go-pdebug",
 			"golang.org/x/net/context",
 		},
 	)
@@ -384,6 +385,17 @@ func New() *Server {
 	}
 	s.SetupRoutes()
 	return s
+}
+
+func httpError(w http.ResponseWriter, message string, st int, err error) {
+  if pdebug.Enabled {
+		if err == nil {
+	    pdebug.Printf("HTTP Error %s", message)
+		} else {
+	    pdebug.Printf("HTTP Error %s: %s", message, err)
+		}
+  }
+  http.Error(w, http.StatusText(st), st)
 }
 
 func getInteger(v url.Values, f string) ([]int64, error) {
