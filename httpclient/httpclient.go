@@ -176,7 +176,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 		buf.WriteString("\n" + `res, err := c.Client.Get(u.String())`)
 		buf.WriteString(errout)
 	case "post":
-		buf.WriteString("\n" + `res, err := c.Client.Post(u.String(), "text/json", &buf)`)
+		buf.WriteString("\n" + `res, err := c.Client.Post(u.String(), "application/json", &buf)`)
 		buf.WriteString(errout)
 	}
 	buf.WriteString("\nif res.StatusCode != http.StatusOK {")
