@@ -222,11 +222,7 @@ default:
 
 	fmt.Fprintf(&buf, "\ndo%s(context.Background(), w, r", name)
 	if _, ok := ctx.RequestValidators[name]; ok {
-		buf.WriteString(`, `)
-		if genutil.LooksLikeStruct(payloadType) {
-			buf.WriteString("&")
-		}
-		buf.WriteString(`payload`)
+		buf.WriteString(`, payload`)
 	}
 	buf.WriteString(`)`)
 	buf.WriteString("\n}\n")
@@ -344,9 +340,6 @@ func generateStubHandlerCode(out io.Writer, ctx *genctx) error {
 		fmt.Fprintf(&buf, "\nfunc do%s(ctx context.Context, w http.ResponseWriter, r *http.Request", methodName)
 		if _, ok := ctx.RequestValidators[methodName]; ok {
 			buf.WriteString(`, payload `)
-			if genutil.LooksLikeStruct(payloadType) {
-				buf.WriteRune('*')
-			}
 			buf.WriteString(payloadType)
 		}
 		buf.WriteString(") {")
@@ -470,9 +463,17 @@ func generateDataCode(out io.Writer, ctx *genctx) error {
 	}
 
 	for t := range types {
-		t = strings.TrimPrefix(t, ctx.AppPkg+".")
-		if genutil.LooksLikeStruct(t) {
-			fmt.Fprintf(&buf, "type %s struct {}\n", t)
+		if i := strings.IndexRune(t, '.'); i > -1 { // we have a qualified struct name?
+			if prefix := t[:i+1]; prefix != "" {
+				if prefix != ctx.AppPkg + "." {
+					log.Printf(" * '%s' has a package name that's not the app package (%s != %s.)", t, prefix, ctx.AppPkg)
+					continue
+				}
+			}
+			t = strings.TrimPrefix(t, ctx.AppPkg+".")
+			if genutil.LooksLikeStruct(t) {
+				fmt.Fprintf(&buf, "type %s struct {}\n", t)
+			}
 		}
 	}
 
