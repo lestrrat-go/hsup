@@ -143,48 +143,50 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	if v := ctx.RequestValidators[name]; v != nil {
 		// If this is a get request, then we'd have to assemble
 		// the incoming data from r.Form
-		if method == "get" && (payloadType == "interface{}" || payloadType == "map[string]interface{}") {
-			buf.WriteString("\nif err := r.ParseForm(); err != nil {")
-			buf.WriteString("\nhttpError(w, `Failed to process query/post form`, http.StatusInternalServerError, nil)")
-			buf.WriteString("\nreturn")
-			buf.WriteString("\n}")
-			buf.WriteString("\npayload := make(map[string]interface{})")
+		if method == "get" {
+			switch payloadType {
+			case "interface{}", "map[string]interface{}":
+				buf.WriteString("\nif err := r.ParseForm(); err != nil {")
+				buf.WriteString("\nhttpError(w, `Failed to process query/post form`, http.StatusInternalServerError, nil)")
+				buf.WriteString("\nreturn")
+				buf.WriteString("\n}")
+				buf.WriteString("\npayload := make(map[string]interface{})")
 
-			pnames := make([]string, 0, len(l.Schema.Properties))
-			for k := range l.Schema.Properties {
-				pnames = append(pnames, k)
-			}
-			sort.Strings(pnames)
+				pnames := make([]string, 0, len(l.Schema.Properties))
+				for k := range l.Schema.Properties {
+					pnames = append(pnames, k)
+				}
+				sort.Strings(pnames)
 
-			for _, k := range pnames {
-				v := l.Schema.Properties[k]
-				if !v.IsResolved() {
-					rv, err := v.Resolve(ctx.Schema)
-					if err != nil {
-						return "", err
+				for _, k := range pnames {
+					v := l.Schema.Properties[k]
+					if !v.IsResolved() {
+						rv, err := v.Resolve(ctx.Schema)
+						if err != nil {
+							return "", err
+						}
+						v = rv
 					}
-					v = rv
-				}
 
-				if len(v.Type) != 1 {
-					return "", fmt.Errorf("'%s.%s' can't handle input parameters unless the type contains exactly 1 type (got: %v)", name, k, v.Type)
-				}
+					if len(v.Type) != 1 {
+						return "", fmt.Errorf("'%s.%s' can't handle input parameters unless the type contains exactly 1 type (got: %v)", name, k, v.Type)
+					}
 
-				qk := strconv.Quote(k)
-				buf.WriteString("\n{")
-				switch v.Type[0] {
-				case schema.IntegerType:
-					fmt.Fprintf(&buf, "\nv, err := getInteger(r.Form, %s)", qk)
-					fmt.Fprintf(&buf, `
+					qk := strconv.Quote(k)
+					buf.WriteString("\n{")
+					switch v.Type[0] {
+					case schema.IntegerType:
+						fmt.Fprintf(&buf, "\nv, err := getInteger(r.Form, %s)", qk)
+						fmt.Fprintf(&buf, `
 if err != nil {
 	httpError(w, "Invalid parameter " + %s, http.StatusInternalServerError, err)
 	return
 }
 `, strconv.Quote(k))
-				case schema.StringType:
-					fmt.Fprintf(&buf, "\nv := r.Form[%s]", qk)
-				}
-				fmt.Fprintf(&buf, `
+					case schema.StringType:
+						fmt.Fprintf(&buf, "\nv := r.Form[%s]", qk)
+					}
+					fmt.Fprintf(&buf, `
 switch len(v) {
 case 0:
 case 1:
@@ -194,11 +196,18 @@ default:
 }
 }
 `, qk, qk)
+				}
+			default:
+				buf.WriteString("\nvar payload ")
+				buf.WriteString(strings.TrimPrefix(payloadType, ctx.AppPkg+"."))
+				buf.WriteString("\nif err := urlenc.Unmarshal([]byte(r.URL.RawQuery), &payload); err != nil {")
+				buf.WriteString("\nhttpError(w, `Failed to parse url query string`, http.StatusInternalServerError, err)")
+				buf.WriteString("\nreturn")
+				buf.WriteString("\n}")
 			}
 		} else {
 			buf.WriteString("\nvar payload ")
-			payloadType = strings.TrimPrefix(payloadType, ctx.AppPkg+".")
-			buf.WriteString(payloadType)
+			buf.WriteString(strings.TrimPrefix(payloadType, ctx.AppPkg+"."))
 			buf.WriteString("\nif err := json.NewDecoder(r.Body).Decode(&payload); err != nil {")
 			buf.WriteString("\nhttpError(w, `Invalid input`, http.StatusInternalServerError, err)")
 			buf.WriteString("\nreturn")
@@ -366,6 +375,7 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 			filepath.Join(ctx.PkgPath, "validator"),
 			"github.com/gorilla/mux",
 			"github.com/lestrrat/go-pdebug",
+			"github.com/lestrrat/go-urlenc",
 			"golang.org/x/net/context",
 		},
 	)

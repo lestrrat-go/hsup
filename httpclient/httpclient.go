@@ -161,17 +161,23 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	fmt.Fprintf(&buf, "\n"+`u, err := url.Parse(c.Endpoint + %s)`, strconv.Quote(l.Path()))
 	buf.WriteString(errout)
 
-	if _, ok := ctx.RequestPayloadType[name]; ok {
-		buf.WriteString("\n" + `buf := bytes.Buffer{}`)
-		buf.WriteString("\n" + `err = json.NewEncoder(&buf).Encode(in)`)
-		buf.WriteString(errout)
-	}
-
-	method := l.Method
+	method := strings.ToLower(l.Method)
 	if method == "" {
 		method = "get"
 	}
-	switch strings.ToLower(method) {
+	if _, ok := ctx.RequestPayloadType[name]; ok {
+		if method == "get" {
+			buf.WriteString("\nbuf, err := urlenc.Marshal(in)")
+			buf.WriteString(errout)
+			buf.WriteString("\nu.RawQuery = string(buf)")
+		} else {
+			buf.WriteString("\n" + `buf := bytes.Buffer{}`)
+			buf.WriteString("\n" + `err = json.NewEncoder(&buf).Encode(in)`)
+			buf.WriteString(errout)
+		}
+	}
+
+	switch method {
 	case "get":
 		buf.WriteString("\n" + `res, err := c.Client.Get(u.String())`)
 		buf.WriteString(errout)
@@ -244,7 +250,7 @@ func generateClientCode(out io.Writer, ctx *genctx) error {
 	genutil.WriteImports(
 		&buf,
 		[]string{"bytes", "encoding/json", "fmt", "net/http", "net/url"},
-		[]string{ctx.PkgPath},
+		[]string{ctx.PkgPath, "github.com/lestrrat/go-urlenc"},
 	)
 
 	buf.WriteString(`type Client struct {
