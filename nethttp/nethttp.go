@@ -139,52 +139,52 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	buf.WriteString("` {\nhttpError(w, `Method was ` + r.Method, http.StatusNotFound, nil)\n}\n")
 
 	payloadType := ctx.RequestPayloadType[name]
+
 	if v := ctx.RequestValidators[name]; v != nil {
-		if method == "get" {
-			// If this is a get request, then we'd have to assemble
-			// the incoming data from r.Form
-			if payloadType == "interface{}" || payloadType == "map[string]interface{}" {
-				buf.WriteString("\nif err := r.ParseForm(); err != nil {")
-				buf.WriteString("\nhttpError(w, `Failed to process query/post form`, http.StatusInternalServerError, nil)")
-				buf.WriteString("\nreturn")
-				buf.WriteString("\n}")
-				buf.WriteString("\npayload := make(map[string]interface{})")
+		// If this is a get request, then we'd have to assemble
+		// the incoming data from r.Form
+		if method == "get" && (payloadType == "interface{}" || payloadType == "map[string]interface{}") {
+			buf.WriteString("\nif err := r.ParseForm(); err != nil {")
+			buf.WriteString("\nhttpError(w, `Failed to process query/post form`, http.StatusInternalServerError, nil)")
+			buf.WriteString("\nreturn")
+			buf.WriteString("\n}")
+			buf.WriteString("\npayload := make(map[string]interface{})")
 
-				pnames := make([]string, 0, len(l.Schema.Properties))
-				for k := range l.Schema.Properties {
-					pnames = append(pnames, k)
+			pnames := make([]string, 0, len(l.Schema.Properties))
+			for k := range l.Schema.Properties {
+				pnames = append(pnames, k)
+			}
+			sort.Strings(pnames)
+
+			for _, k := range pnames {
+				v := l.Schema.Properties[k]
+				if !v.IsResolved() {
+					rv, err := v.Resolve(ctx.Schema)
+					if err != nil {
+						return "", err
+					}
+					v = rv
 				}
-				sort.Strings(pnames)
 
-				for _, k := range pnames {
-					v := l.Schema.Properties[k]
-					if !v.IsResolved() {
-						rv, err := v.Resolve(ctx.Schema)
-						if err != nil {
-							return "", err
-						}
-						v = rv
-					}
+				if len(v.Type) != 1 {
+					return "", fmt.Errorf("'%s.%s' can't handle input parameters unless the type contains exactly 1 type (got: %v)", name, k, v.Type)
+				}
 
-					if len(v.Type) != 1 {
-						return "", errors.New("'" + name + "' can't handle input parameters unless the type contains exactly 1 type")
-					}
-
-					qk := strconv.Quote(k)
-					buf.WriteString("\n{")
-					switch v.Type[0] {
-					case schema.IntegerType:
-						fmt.Fprintf(&buf, "\nv, err := getInteger(r.Form, %s)", qk)
-						fmt.Fprintf(&buf, `
+				qk := strconv.Quote(k)
+				buf.WriteString("\n{")
+				switch v.Type[0] {
+				case schema.IntegerType:
+					fmt.Fprintf(&buf, "\nv, err := getInteger(r.Form, %s)", qk)
+					fmt.Fprintf(&buf, `
 if err != nil {
 	httpError(w, "Invalid parameter " + %s, http.StatusInternalServerError, err)
 	return
 }
 `, strconv.Quote(k))
-					case schema.StringType:
-						fmt.Fprintf(&buf, "\nv := r.Form[%s]", qk)
-					}
-					fmt.Fprintf(&buf, `
+				case schema.StringType:
+					fmt.Fprintf(&buf, "\nv := r.Form[%s]", qk)
+				}
+				fmt.Fprintf(&buf, `
 switch len(v) {
 case 0:
 case 1:
@@ -194,7 +194,6 @@ default:
 }
 }
 `, qk, qk)
-				}
 			}
 		} else {
 			buf.WriteString("\nvar payload ")
@@ -205,6 +204,7 @@ default:
 			buf.WriteString("\nreturn")
 			buf.WriteString("\n}")
 		}
+
 		fmt.Fprintf(&buf, "\n\nif err := %s.%s.Validate(payload); err != nil {", ctx.ValidatorPkg, v.Name)
 		buf.WriteString("\nhttpError(w, `Invalid input`, http.StatusInternalServerError, err)")
 		buf.WriteString("\nreturn")
