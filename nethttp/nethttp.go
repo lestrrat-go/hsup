@@ -214,7 +214,7 @@ default:
 			buf.WriteString("\n}")
 		}
 
-		fmt.Fprintf(&buf, "\n\nif err := %s.%s.Validate(payload); err != nil {", ctx.ValidatorPkg, v.Name)
+		fmt.Fprintf(&buf, "\n\nif err := %s.%s.Validate(&payload); err != nil {", ctx.ValidatorPkg, v.Name)
 		buf.WriteString("\nhttpError(w, `Invalid input`, http.StatusInternalServerError, err)")
 		buf.WriteString("\nreturn")
 		buf.WriteString("\n}")
