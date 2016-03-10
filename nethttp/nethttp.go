@@ -526,7 +526,7 @@ func generateTestCode(out io.Writer, ctx *genctx) error {
 		buf.WriteString("return\n")
 		buf.WriteString("}\n")
 		if _, ok := ctx.ResponseValidators[methodName]; ok {
-			fmt.Fprintf(&buf, `if !assert.NoError(t, %s.HTTP%sResponse.Validate(res), "Validation should succeed") {`+"\n", ctx.ValidatorPkg, methodName)
+			fmt.Fprintf(&buf, `if !assert.NoError(t, %s.HTTP%sResponse.Validate(&res), "Validation should succeed") {`+"\n", ctx.ValidatorPkg, methodName)
 			buf.WriteString("return\n}\n")
 		}
 		buf.WriteString("}\n\n")
