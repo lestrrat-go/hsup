@@ -17,6 +17,7 @@ import (
 
 type Builder struct {
 	AppPkg       string
+	Dir          string
 	Overwrite    bool
 	PkgPath      string
 	ValidatorPkg string
@@ -25,6 +26,7 @@ type Builder struct {
 type genctx struct {
 	*parser.Result
 	AppPkg       string
+	Dir          string
 	Overwrite    bool
 	PkgPath      string
 	ValidatorPkg string
@@ -85,7 +87,7 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 
 func generateFiles(ctx *genctx) error {
 	{
-		fn := filepath.Join(ctx.AppPkg, ctx.ValidatorPkg, fmt.Sprintf("%s.go", ctx.ValidatorPkg))
+		fn := filepath.Join(ctx.Dir, ctx.ValidatorPkg, fmt.Sprintf("%s.go", ctx.ValidatorPkg))
 		if err := generateFile(ctx, fn, generateValidatorCode); err != nil {
 			return err
 		}

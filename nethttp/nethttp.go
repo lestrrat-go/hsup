@@ -22,6 +22,7 @@ import (
 type Builder struct {
 	AppPkg       string
 	ClientPkg    string
+	Dir          string
 	Overwrite    bool
 	PkgPath      string
 	ValidatorPkg string
@@ -31,6 +32,7 @@ type genctx struct {
 	*parser.Result
 	AppPkg       string
 	ClientPkg    string
+	Dir          string
 	Overwrite    bool
 	PkgPath      string
 	ValidatorPkg string
@@ -65,6 +67,7 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 	ctx := genctx{
 		AppPkg:       b.AppPkg,
 		ClientPkg:    b.ClientPkg,
+		Dir:          b.Dir,
 		Overwrite:    b.Overwrite,
 		PkgPath:      b.PkgPath,
 		ValidatorPkg: b.ValidatorPkg,
@@ -131,7 +134,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 
 	fmt.Fprintf(&buf, `func http%s(w http.ResponseWriter, r *http.Request) {`, name)
 	buf.WriteString("\nif pdebug.Enabled {")
-	fmt.Fprintf(&buf, "\ng := pdebug.Marker(%s)", strconv.Quote("http" + name))
+	fmt.Fprintf(&buf, "\ng := pdebug.Marker(%s)", strconv.Quote("http"+name))
 	buf.WriteString("\ndefer g.End()")
 	buf.WriteString("\n}")
 
@@ -267,7 +270,7 @@ func generateFiles(ctxif interface{}) error {
 	// these files are expected to be completely under control by the
 	// hsup system, so get forcefully overwritten
 	sysfiles := map[string]func(io.Writer, *genctx) error{
-		filepath.Join(ctx.AppPkg, fmt.Sprintf("%s_hsup.go", ctx.AppPkg)): generateServerCode,
+		filepath.Join(ctx.Dir, fmt.Sprintf("%s_hsup.go", ctx.AppPkg)): generateServerCode,
 	}
 	for fn, cb := range sysfiles {
 		if err := generateFile(ctx, fn, cb, true); err != nil {
@@ -278,10 +281,10 @@ func generateFiles(ctxif interface{}) error {
 	// these files are expected to be modified by the author, so do
 	// not get forcefully overwritten
 	userfiles := map[string]func(io.Writer, *genctx) error{
-		filepath.Join(ctx.AppPkg, "cmd", ctx.AppPkg, fmt.Sprintf("%s.go", ctx.AppPkg)): generateExecutableCode,
-		filepath.Join(ctx.AppPkg, "handlers.go"):                                       generateStubHandlerCode,
-		filepath.Join(ctx.AppPkg, "interface.go"):                                      generateDataCode,
-		filepath.Join(ctx.AppPkg, "client_test.go"):                                    generateTestCode,
+		filepath.Join(ctx.Dir, "cmd", ctx.AppPkg, fmt.Sprintf("%s.go", ctx.AppPkg)): generateExecutableCode,
+		filepath.Join(ctx.Dir, "handlers.go"):                                       generateStubHandlerCode,
+		filepath.Join(ctx.Dir, "interface.go"):                                      generateDataCode,
+		filepath.Join(ctx.Dir, "client_test.go"):                                    generateTestCode,
 	}
 	for fn, cb := range userfiles {
 		if err := generateFile(ctx, fn, cb, false); err != nil {
@@ -470,7 +473,7 @@ func generateDataCode(out io.Writer, ctx *genctx) error {
 	for t := range types {
 		if i := strings.IndexRune(t, '.'); i > -1 { // we have a qualified struct name?
 			if prefix := t[:i+1]; prefix != "" {
-				if prefix != ctx.AppPkg + "." {
+				if prefix != ctx.AppPkg+"." {
 					log.Printf(" * '%s' has a package name that's not the app package (%s != %s.)", t, prefix, ctx.AppPkg)
 					continue
 				}

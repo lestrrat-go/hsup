@@ -86,6 +86,7 @@ func _main() int {
 
 func doNetHTTP(opts options) error {
 	b := hsup.NetHTTP
+	b.Dir = opts.Dir
 	b.AppPkg = opts.AppPkg
 	b.PkgPath = opts.PkgPath
 	b.Overwrite = opts.Overwrite
@@ -97,6 +98,7 @@ func doNetHTTP(opts options) error {
 
 func doHTTPClient(opts options) error {
 	b := hsup.HTTPClient
+	b.Dir = opts.Dir
 	b.AppPkg = opts.AppPkg
 	b.PkgPath = opts.PkgPath
 	b.Overwrite = opts.Overwrite
@@ -108,6 +110,7 @@ func doHTTPClient(opts options) error {
 
 func doValidator(opts options) error {
 	b := hsup.Validator
+	b.Dir = opts.Dir
 	b.AppPkg = opts.AppPkg
 	b.PkgPath = opts.PkgPath
 	b.Overwrite = opts.Overwrite

@@ -21,6 +21,7 @@ import (
 type Builder struct {
 	AppPkg    string
 	ClientPkg string
+	Dir       string
 	Overwrite bool
 	PkgPath   string
 }
@@ -29,6 +30,7 @@ type genctx struct {
 	*parser.Result
 	AppPkg    string
 	ClientPkg string
+	Dir       string
 	Overwrite bool
 	PkgPath   string
 }
@@ -147,7 +149,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	}
 
 	buf.WriteString("\nif pdebug.Enabled {")
-	fmt.Fprintf(&buf, "\ng := pdebug.Marker(%s).BindError(&err)", strconv.Quote("client." + name))
+	fmt.Fprintf(&buf, "\ng := pdebug.Marker(%s).BindError(&err)", strconv.Quote("client."+name))
 	buf.WriteString("\ndefer g.End()")
 	buf.WriteString("\n}")
 
@@ -241,7 +243,7 @@ func generateFile(ctx *genctx, fn string, cb func(io.Writer, *genctx) error) err
 
 func generateFiles(ctx *genctx) error {
 	{
-		fn := filepath.Join(ctx.AppPkg, "client", "client.go")
+		fn := filepath.Join(ctx.Dir, "client", "client.go")
 		if err := generateFile(ctx, fn, generateClientCode); err != nil {
 			return err
 		}
