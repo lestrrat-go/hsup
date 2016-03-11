@@ -136,17 +136,20 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	buf.WriteRune(')')
 
 	if outtype == "" {
-		buf.WriteString(`error {`)
+		buf.WriteString(`(err error) {`)
 	} else {
 		prefix := ""
 		if genutil.LooksLikeStruct(outtype) {
 			prefix = "*"
 		}
 
-		fmt.Fprintf(&buf, `(%s%s, error) {`, prefix, outtype)
+		fmt.Fprintf(&buf, `(ret %s%s, err error) {`, prefix, outtype)
 	}
 
-	buf.WriteString("var err error")
+	buf.WriteString("\nif pdebug.Enabled {")
+	fmt.Fprintf(&buf, "\ng := pdebug.Marker(%s).BindError(&err)", strconv.Quote("client." + name))
+	buf.WriteString("\ndefer g.End()")
+	buf.WriteString("\n}")
 
 	errbuf := bytes.Buffer{}
 	errbuf.WriteString("\nif err != nil {")
@@ -250,7 +253,7 @@ func generateClientCode(out io.Writer, ctx *genctx) error {
 	genutil.WriteImports(
 		&buf,
 		[]string{"bytes", "encoding/json", "fmt", "net/http", "net/url"},
-		[]string{ctx.PkgPath, "github.com/lestrrat/go-urlenc"},
+		[]string{ctx.PkgPath, "github.com/lestrrat/go-pdebug", "github.com/lestrrat/go-urlenc"},
 	)
 
 	buf.WriteString(`type Client struct {
