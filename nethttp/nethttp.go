@@ -129,12 +129,17 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	buf := bytes.Buffer{}
 
-	fmt.Fprintf(&buf, `func http%s(w http.ResponseWriter, r *http.Request) {`+"\n", name)
+	fmt.Fprintf(&buf, `func http%s(w http.ResponseWriter, r *http.Request) {`, name)
+	buf.WriteString("\nif pdebug.Enabled {")
+	fmt.Fprintf(&buf, "\ng := pdebug.Marker(%s)", strconv.Quote("http" + name))
+	buf.WriteString("\ndefer g.End()")
+	buf.WriteString("\n}")
+
 	method := strings.ToLower(l.Method)
 	if method == "" {
 		method = "get"
 	}
-	buf.WriteString("if strings.ToLower(r.Method) != `")
+	buf.WriteString("\nif strings.ToLower(r.Method) != `")
 	fmt.Fprintf(&buf, "%s", method)
 	buf.WriteString("` {\nhttpError(w, `Method was ` + r.Method, http.StatusNotFound, nil)\n}\n")
 

@@ -182,9 +182,15 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 
 	switch method {
 	case "get":
+		buf.WriteString("\nif pdebug.Enabled {")
+		fmt.Fprintf(&buf, "\npdebug.Printf(%s, u.String())", strconv.Quote("GET to %s"))
+		buf.WriteString("\n}")
 		buf.WriteString("\n" + `res, err := c.Client.Get(u.String())`)
 		buf.WriteString(errout)
 	case "post":
+		buf.WriteString("\nif pdebug.Enabled {")
+		fmt.Fprintf(&buf, "\npdebug.Printf(%s, u.String())", strconv.Quote("POST to %s"))
+		buf.WriteString("\n}")
 		buf.WriteString("\n" + `res, err := c.Client.Post(u.String(), "application/json", &buf)`)
 		buf.WriteString(errout)
 	}
