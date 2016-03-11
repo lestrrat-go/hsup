@@ -20,7 +20,7 @@ type options struct {
 	AppPkg    string   `short:"a" long:"apppkg" description:"Application package name"`
 	Schema    string   `short:"s" long:"schema" required:"true" description:"schema file to process"`
 	Flavor    []string `short:"f" long:"flavor" default:"nethttp" default:"validator" default:"httpclient" description:"what type of code to generate"`
-	Overwrite bool     `short:"O" long:"overwrite" default:"false" description:"overwrite if file exists"`
+	Overwrite bool     `short:"O" long:"overwrite" description:"overwrite if file exists"`
 }
 
 func _main() int {
