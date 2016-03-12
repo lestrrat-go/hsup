@@ -2,6 +2,7 @@ package httpclient
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/format"
 	"io"
@@ -26,13 +27,18 @@ type Builder struct {
 	PkgPath   string
 }
 
+type clientHints struct {
+	Imports []string
+}
+
 type genctx struct {
 	*parser.Result
-	AppPkg    string
-	ClientPkg string
-	Dir       string
-	Overwrite bool
-	PkgPath   string
+	AppPkg      string
+	ClientHints clientHints
+	ClientPkg   string
+	Dir         string
+	Overwrite   bool
+	PkgPath     string
 }
 
 func New() *Builder {
@@ -72,12 +78,56 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 	return nil
 }
 
+func parseClientHints(ctx *genctx, m map[string]interface{}) error {
+	if v, ok := m["imports"]; ok {
+		switch v.(type) {
+		case []interface{}:
+		default:
+			return errors.New("invalid value type for imports: expected []interface{}")
+		}
+
+		l := v.([]interface{})
+		ctx.ClientHints.Imports = make([]string, len(l))
+		for i, n := range l {
+			switch n.(type) {
+			case string:
+			default:
+				return errors.New("invalid value type for elements in imports: expected string")
+			}
+			ctx.ClientHints.Imports[i] = n.(string)
+		}
+	}
+	return nil
+}
+
+func parseExtras(ctx *genctx, s *hschema.HyperSchema) error {
+	for k, v := range s.Extras {
+		switch k {
+		case "hsup.client":
+			switch v.(type) {
+			case map[string]interface{}:
+			default:
+				return errors.New("invalid value type for hsup.client: expected map[string]interface{}")
+			}
+
+			if err := parseClientHints(ctx, v.(map[string]interface{})); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func parse(ctx *genctx, s *hschema.HyperSchema) error {
 	pres, err := parser.Parse(s)
 	if err != nil {
 		return err
 	}
 	ctx.Result = pres
+
+	if err := parseExtras(ctx, s); err != nil {
+		return err
+	}
 
 	for _, link := range s.Links {
 		methodName := genutil.TitleToName(link.Title)
@@ -258,10 +308,15 @@ func generateClientCode(out io.Writer, ctx *genctx) error {
 	genutil.WriteDoNotEdit(&buf)
 	fmt.Fprintf(&buf, "package %s\n\n", ctx.ClientPkg)
 
+	imports := []string{ctx.PkgPath, "github.com/lestrrat/go-pdebug", "github.com/lestrrat/go-urlenc"}
+	if l := ctx.ClientHints.Imports; len(l) > 0 {
+		imports = append(imports, l...)
+	}
+
 	genutil.WriteImports(
 		&buf,
 		[]string{"bytes", "encoding/json", "fmt", "net/http", "net/url"},
-		[]string{ctx.PkgPath, "github.com/lestrrat/go-pdebug", "github.com/lestrrat/go-urlenc"},
+		imports,
 	)
 
 	buf.WriteString(`type Client struct {
