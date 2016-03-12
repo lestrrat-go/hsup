@@ -28,6 +28,10 @@ type Builder struct {
 	ValidatorPkg string
 }
 
+type serverHints struct {
+	Imports []string
+}
+
 type genctx struct {
 	*parser.Result
 	AppPkg       string
@@ -35,6 +39,7 @@ type genctx struct {
 	Dir          string
 	Overwrite    bool
 	PkgPath      string
+	ServerHints  serverHints
 	ValidatorPkg string
 }
 
@@ -85,12 +90,56 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 	return nil
 }
 
+func parseServerHints(ctx *genctx, m map[string]interface{}) error {
+	if v, ok := m["imports"]; ok {
+		switch v.(type) {
+		case []interface{}:
+		default:
+			return errors.New("invalid value type for imports: expected []interface{}")
+		}
+
+		l := v.([]interface{})
+		ctx.ServerHints.Imports = make([]string, len(l))
+		for i, n := range l {
+			switch n.(type) {
+			case string:
+			default:
+				return errors.New("invalid value type for elements in imports: expected string")
+			}
+			ctx.ServerHints.Imports[i] = n.(string)
+		}
+	}
+	return nil
+}
+
+func parseExtras(ctx *genctx, s *hschema.HyperSchema) error {
+	for k, v := range s.Extras {
+		switch k {
+		case "hsup.server":
+			switch v.(type) {
+			case map[string]interface{}:
+			default:
+				return errors.New("invalid value type for hsup.server: expected map[string]interface{}")
+			}
+
+			if err := parseServerHints(ctx, v.(map[string]interface{})); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func parse(ctx *genctx, s *hschema.HyperSchema) error {
 	pres, err := parser.Parse(s)
 	if err != nil {
 		return err
 	}
 	ctx.Result = pres
+
+	if err := parseExtras(ctx, s); err != nil {
+		return err
+	}
 
 	for _, link := range s.Links {
 		methodName := genutil.TitleToName(link.Title)
@@ -363,6 +412,17 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 	genutil.WriteDoNotEdit(&buf)
 	fmt.Fprintf(&buf, "package %s\n\n", ctx.AppPkg)
 
+	imports := []string{
+			filepath.Join(ctx.PkgPath, "validator"),
+			"github.com/gorilla/mux",
+			"github.com/lestrrat/go-pdebug",
+			"github.com/lestrrat/go-urlenc",
+			"golang.org/x/net/context",
+		}
+	if len(ctx.ServerHints.Imports) > 0 {
+		imports = append(imports, ctx.ServerHints.Imports...)
+	}
+
 	genutil.WriteImports(
 		&buf,
 		[]string{
@@ -372,13 +432,7 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 			"strconv",
 			"strings",
 		},
-		[]string{
-			filepath.Join(ctx.PkgPath, "validator"),
-			"github.com/gorilla/mux",
-			"github.com/lestrrat/go-pdebug",
-			"github.com/lestrrat/go-urlenc",
-			"golang.org/x/net/context",
-		},
+		imports,
 	)
 
 	buf.WriteString(`
