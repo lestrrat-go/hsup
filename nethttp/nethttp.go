@@ -409,8 +409,9 @@ func generateStubHandlerCode(out io.Writer, ctx *genctx) error {
 func generateServerCode(out io.Writer, ctx *genctx) error {
 	buf := bytes.Buffer{}
 
-	genutil.WriteDoNotEdit(&buf)
 	fmt.Fprintf(&buf, "package %s\n\n", ctx.AppPkg)
+
+	genutil.WriteDoNotEdit(&buf)
 
 	imports := []string{
 		"github.com/gorilla/mux",
