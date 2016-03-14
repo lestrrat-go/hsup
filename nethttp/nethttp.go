@@ -413,11 +413,11 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 	fmt.Fprintf(&buf, "package %s\n\n", ctx.AppPkg)
 
 	imports := []string{
-			"github.com/gorilla/mux",
-			"github.com/lestrrat/go-pdebug",
-			"github.com/lestrrat/go-urlenc",
-			"golang.org/x/net/context",
-		}
+		"github.com/gorilla/mux",
+		"github.com/lestrrat/go-pdebug",
+		"github.com/lestrrat/go-urlenc",
+		"golang.org/x/net/context",
+	}
 
 	if len(ctx.RequestValidators) > 0 || len(ctx.ResponseValidators) > 0 {
 		imports = append(imports, filepath.Join(ctx.PkgPath, "validator"))
@@ -440,6 +440,8 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 	)
 
 	buf.WriteString(`
+var _ = json.Decoder{}
+var _ = urlenc.Marshal
 type Server struct {
 	*mux.Router
 }
@@ -550,19 +552,26 @@ func generateTestCode(out io.Writer, ctx *genctx) error {
 	buf := bytes.Buffer{}
 
 	fmt.Fprintf(&buf, "package %s_test\n\n", ctx.AppPkg)
+
+	imports := []string{
+		ctx.PkgPath,
+		filepath.Join(ctx.PkgPath, ctx.ClientPkg),
+		"github.com/stretchr/testify/assert",
+	}
+
+	if len(ctx.ResponseValidators) > 0 {
+		imports = append(imports, filepath.Join(ctx.PkgPath, ctx.ValidatorPkg))
+	}
+
 	genutil.WriteImports(
 		&buf,
 		[]string{
 			"testing",
 			"net/http/httptest",
 		},
-		[]string{
-			ctx.PkgPath,
-			filepath.Join(ctx.PkgPath, ctx.ClientPkg),
-			filepath.Join(ctx.PkgPath, ctx.ValidatorPkg),
-			"github.com/stretchr/testify/assert",
-		},
+		imports,
 	)
+
 	for _, methodName := range ctx.MethodNames {
 		fmt.Fprintf(&buf, "func Test%s(t *testing.T) {\n", methodName)
 		fmt.Fprintf(&buf, "ts := httptest.NewServer(%s.New())\n", ctx.AppPkg)
