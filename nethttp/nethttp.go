@@ -413,12 +413,16 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 	fmt.Fprintf(&buf, "package %s\n\n", ctx.AppPkg)
 
 	imports := []string{
-			filepath.Join(ctx.PkgPath, "validator"),
 			"github.com/gorilla/mux",
 			"github.com/lestrrat/go-pdebug",
 			"github.com/lestrrat/go-urlenc",
 			"golang.org/x/net/context",
 		}
+
+	if len(ctx.RequestValidators) > 0 || len(ctx.ResponseValidators) > 0 {
+		imports = append(imports, filepath.Join(ctx.PkgPath, "validator"))
+	}
+
 	if len(ctx.ServerHints.Imports) > 0 {
 		imports = append(imports, ctx.ServerHints.Imports...)
 	}

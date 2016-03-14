@@ -58,6 +58,7 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 	}
 
 	ctx := genctx{
+		Dir:          b.Dir,
 		AppPkg:       b.AppPkg,
 		Overwrite:    b.Overwrite,
 		PkgPath:      b.PkgPath,
