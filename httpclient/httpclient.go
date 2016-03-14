@@ -242,6 +242,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	case "post":
 		buf.WriteString("\nif pdebug.Enabled {")
 		fmt.Fprintf(&buf, "\npdebug.Printf(%s, u.String())", strconv.Quote("POST to %s"))
+		buf.WriteString("\n" + `pdebug.Printf("%s", buf.String())`)
 		buf.WriteString("\n}")
 		buf.WriteString("\n" + `res, err := c.Client.Post(u.String(), "application/json", &buf)`)
 		buf.WriteString(errout)
