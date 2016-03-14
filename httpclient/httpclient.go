@@ -310,14 +310,14 @@ func generateClientCode(out io.Writer, ctx *genctx) error {
 	genutil.WriteDoNotEdit(&buf)
 	fmt.Fprintf(&buf, "package %s\n\n", ctx.ClientPkg)
 
-	imports := []string{"bytes", "encoding/json", "github.com/lestrrat/go-pdebug", "github.com/lestrrat/go-urlenc"}
+	imports := []string{"github.com/lestrrat/go-pdebug", "github.com/lestrrat/go-urlenc"}
 	if l := ctx.ClientHints.Imports; len(l) > 0 {
 		imports = append(imports, l...)
 	}
 
 	genutil.WriteImports(
 		&buf,
-		[]string{"fmt", "net/http", "net/url"},
+		[]string{"bytes", "encoding/json", "fmt", "net/http", "net/url"},
 		imports,
 	)
 
