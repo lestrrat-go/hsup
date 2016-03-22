@@ -266,18 +266,18 @@ default:
 			buf.WriteString("\nvar payload ")
 			buf.WriteString(strings.TrimPrefix(payloadType, ctx.AppPkg+"."))
 			buf.WriteString("\nif err := json.NewDecoder(r.Body).Decode(&payload); err != nil {")
-			buf.WriteString("\nhttpError(w, `Invalid input`, http.StatusInternalServerError, err)")
+			buf.WriteString("\nhttpError(w, `Invalid JSON input`, http.StatusInternalServerError, err)")
 			buf.WriteString("\nreturn")
 			buf.WriteString("\n}")
 		}
 
 		fmt.Fprintf(&buf, "\n\nif err := %s.%s.Validate(&payload); err != nil {", ctx.ValidatorPkg, v.Name)
-		buf.WriteString("\nhttpError(w, `Invalid input`, http.StatusInternalServerError, err)")
+		buf.WriteString("\nhttpError(w, `Invalid input (validation failed)`, http.StatusInternalServerError, err)")
 		buf.WriteString("\nreturn")
 		buf.WriteString("\n}")
 	}
 
-	fmt.Fprintf(&buf, "\ndo%s(context.Background(), w, r", name)
+	fmt.Fprintf(&buf, "\ndo%s(NewContext(r), w, r", name)
 	if _, ok := ctx.RequestValidators[name]; ok {
 		buf.WriteString(`, payload`)
 	}
@@ -445,6 +445,14 @@ var _ = json.Decoder{}
 var _ = urlenc.Marshal
 type Server struct {
 	*mux.Router
+}
+
+// NewContext creates a cteonxt.Context object from the request.
+// If you are using appengine, for example, you probably want to set this
+// function to something that create a context, and then sets
+// the appengine context to it so it can be referred to later.
+var NewContext func(* http.Request) context.Context= func(r *http.Request) context.Context {
+	return context.Background()
 }
 
 func Run(l string) error {
