@@ -258,9 +258,20 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	if outtype == "" {
 		buf.WriteString("\nreturn nil")
 	} else {
-		buf.WriteString("\nvar payload ")
+		buf.WriteString("\nvar body io.Reader = res.Body")
+		buf.WriteString("\nif pdebug.Enabled {")
+		buf.WriteString("\njsbuf, err := ioutil.ReadAll(res.Body)")
+		buf.WriteString("\nif err != nil {")
+		buf.WriteString("\n" + `pdebug.Printf("failed to read respons buffer: %s", err)`)
+		buf.WriteString("\n} else {")
+		buf.WriteString("\n" + `pdebug.Printf("response buffer: %s", jsbuf)`)
+		buf.WriteString("\n}")
+		buf.WriteString("\nbody = bytes.NewReader(jsbuf)")
+		buf.WriteString("\n}")
+
+		buf.WriteString("\n\nvar payload ")
 		buf.WriteString(outtype)
-		buf.WriteString("\nerr = json.NewDecoder(res.Body).Decode(")
+		buf.WriteString("\nerr = json.NewDecoder(body).Decode(")
 		buf.WriteString("&")
 		buf.WriteString("payload)")
 		buf.WriteString(errout)
@@ -317,7 +328,7 @@ func generateClientCode(out io.Writer, ctx *genctx) error {
 
 	genutil.WriteImports(
 		&buf,
-		[]string{"bytes", "encoding/json", "fmt", "net/http", "net/url"},
+		[]string{"bytes", "encoding/json", "fmt", "io", "io/ioutil", "net/http", "net/url"},
 		imports,
 	)
 
