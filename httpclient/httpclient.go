@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lestrrat/go-hsup/ext"
 	"github.com/lestrrat/go-hsup/internal/genutil"
 	"github.com/lestrrat/go-hsup/internal/parser"
 	"github.com/lestrrat/go-jshschema"
@@ -155,10 +154,8 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 			s = rs
 		}
 		intype = "interface{}"
-		if t, ok := s.Extras[ext.TypeKey]; ok {
-			if ts, ok := t.(string); ok {
-				intype = ts
-			}
+		if t, ok := ctx.RequestPayloadType[name]; ok {
+			intype = t
 		}
 	}
 	if s := l.TargetSchema; s != nil {
@@ -170,10 +167,8 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 			s = rs
 		}
 		outtype = "interface{}"
-		if t, ok := s.Extras[ext.TypeKey]; ok {
-			if ts, ok := t.(string); ok {
-				outtype = ts
-			}
+		if t, ok := ctx.ResponsePayloadType[name]; ok {
+			outtype = t
 		}
 	}
 

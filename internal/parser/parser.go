@@ -44,6 +44,12 @@ func Parse(s *hschema.HyperSchema) (*Result, error) {
 }
 
 func parse(ctx *Result, s *hschema.HyperSchema) error {
+	// We want to know the namespace of the transport.
+	// Normally we just use "model"
+	transportNs, ok := s.Extras[ext.TransportNsKey]
+	if !ok {
+		transportNs = "model"
+	}
 	for i, link := range s.Links {
 		methodName := genutil.TitleToName(link.Title)
 		// Got to do this first, because validators are used in makeMethod()
@@ -60,21 +66,15 @@ func parse(ctx *Result, s *hschema.HyperSchema) error {
 				return err
 			}
 
-			// If the request is a GET request or the encoding is
-			// 'application/x-www-form-urlencoded', then the input parameter
-			// will HAVE to be a map
-			if strings.ToLower(link.Method) == "get" || link.EncType == "application/x-www-form-urlencoded" {
-				ctx.RequestPayloadType[methodName] = "map[string]interface{}"
-			} else {
-				ctx.RequestPayloadType[methodName] = "interface{}"
-			}
-
 			if gt, ok := ls.Extras[ext.TypeKey]; ok {
 				ctx.RequestPayloadType[methodName] = gt.(string)
+			} else {
+				ctx.RequestPayloadType[methodName] = fmt.Sprintf("%s.%sRequest", transportNs, methodName)
 			}
 			v.Name = fmt.Sprintf("HTTP%sRequest", methodName)
 			ctx.RequestValidators[methodName] = v
 		}
+
 		if ls := link.TargetSchema; ls != nil {
 			if !ls.IsResolved() {
 				rs, err := ls.Resolve(ctx.Schema)
@@ -90,6 +90,8 @@ func parse(ctx *Result, s *hschema.HyperSchema) error {
 			ctx.ResponsePayloadType[methodName] = "interface{}"
 			if gt, ok := ls.Extras[ext.TypeKey]; ok {
 				ctx.ResponsePayloadType[methodName] = gt.(string)
+			} else {
+				ctx.ResponsePayloadType[methodName] = fmt.Sprintf("%s.%sResponse", transportNs, methodName)
 			}
 			v.Name = fmt.Sprintf("HTTP%sResponse", methodName)
 			ctx.ResponseValidators[methodName] = v
