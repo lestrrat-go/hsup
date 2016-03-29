@@ -253,22 +253,22 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	if outtype == "" {
 		buf.WriteString("\nreturn nil")
 	} else {
-		buf.WriteString("\nvar body io.Reader = res.Body")
+
+		buf.WriteString("\njsonbuf := getTransportJSONBuffer()")
+		buf.WriteString("\ndefer releaseTransportJSONBuffer(jsonbuf)")
+		buf.WriteString("\n_, err = io.Copy(jsonbuf, res.Body)")
+		buf.WriteString("\ndefer res.Body.Close()")
 		buf.WriteString("\nif pdebug.Enabled {")
-		buf.WriteString("\njsbuf, err := ioutil.ReadAll(res.Body)")
 		buf.WriteString("\nif err != nil {")
 		buf.WriteString("\n" + `pdebug.Printf("failed to read respons buffer: %s", err)`)
 		buf.WriteString("\n} else {")
-		buf.WriteString("\n" + `pdebug.Printf("response buffer: %s", jsbuf)`)
+		buf.WriteString("\n" + `pdebug.Printf("response buffer: %s", jsonbuf)`)
 		buf.WriteString("\n}")
-		buf.WriteString("\nbody = bytes.NewReader(jsbuf)")
 		buf.WriteString("\n}")
-
+		buf.WriteString(errout)
 		buf.WriteString("\n\nvar payload ")
 		buf.WriteString(outtype)
-		buf.WriteString("\nerr = json.NewDecoder(body).Decode(")
-		buf.WriteString("&")
-		buf.WriteString("payload)")
+		buf.WriteString("\nerr = json.Unmarshal(jsonbuf.Bytes(), &payload)")
 		buf.WriteString(errout)
 		buf.WriteString("\nreturn ")
 		if genutil.LooksLikeStruct(outtype) {
@@ -323,13 +323,31 @@ func generateClientCode(out io.Writer, ctx *genctx) error {
 
 	genutil.WriteImports(
 		&buf,
-		[]string{"bytes", "encoding/json", "fmt", "io", "io/ioutil", "net/http", "net/url"},
+		[]string{"bytes", "encoding/json", "fmt", "io", "net/http", "net/url", "sync"},
 		imports,
 	)
 
 	buf.WriteString(`
 var _ = bytes.MinRead
 var _ = json.Decoder{}
+var transportJSONBufferPool = sync.Pool{
+	New: allocTransportJSONBuffer,
+}
+
+func allocTransportJSONBuffer() interface {} {
+	return &bytes.Buffer{}
+}
+
+func getTransportJSONBuffer() *bytes.Buffer {
+	return transportJSONBufferPool.Get().(*bytes.Buffer)
+}
+
+func releaseTransportJSONBuffer(buf *bytes.Buffer) {
+	buf.Reset()
+	transportJSONBufferPool.Put(buf)
+}
+
+
 
 type Client struct {
 	Client *http.Client

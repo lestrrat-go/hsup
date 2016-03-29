@@ -265,7 +265,15 @@ default:
 		} else {
 			buf.WriteString("\nvar payload ")
 			buf.WriteString(strings.TrimPrefix(payloadType, ctx.AppPkg+"."))
-			buf.WriteString("\nif err := json.NewDecoder(r.Body).Decode(&payload); err != nil {")
+
+			buf.WriteString("\njsonbuf := getTransportJSONBuffer()")
+			buf.WriteString("\ndefer releaseTransportJSONBuffer(jsonbuf)")
+			buf.WriteString("\nif _, err := io.Copy(jsonbuf, r.Body); err != nil {")
+			buf.WriteString("\nhttpError(w, `Failed to read request body`, http.StatusInternalServerError, err)")
+			buf.WriteString("\n}")
+			buf.WriteString("\ndefer r.Body.Close()")
+			buf.WriteString("\npdebug.Printf(`-----> %s`, jsonbuf.Bytes())")
+			buf.WriteString("\nif err := json.Unmarshal(jsonbuf.Bytes(), &payload); err != nil {")
 			buf.WriteString("\nhttpError(w, `Invalid JSON input`, http.StatusInternalServerError, err)")
 			buf.WriteString("\nreturn")
 			buf.WriteString("\n}")
@@ -431,11 +439,14 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 	genutil.WriteImports(
 		&buf,
 		[]string{
+			"bytes",
 			"encoding/json",
+			"io",
 			"net/http",
 			"net/url",
 			"strconv",
 			"strings",
+			"sync",
 		},
 		imports,
 	)
@@ -443,6 +454,23 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 	buf.WriteString(`
 var _ = json.Decoder{}
 var _ = urlenc.Marshal
+var transportJSONBufferPool = sync.Pool{
+	New: allocTransportJSONBuffer,
+}
+
+func allocTransportJSONBuffer() interface {} {
+	return &bytes.Buffer{}
+}
+
+func getTransportJSONBuffer() *bytes.Buffer {
+	return transportJSONBufferPool.Get().(*bytes.Buffer)
+}
+
+func releaseTransportJSONBuffer(buf *bytes.Buffer) {
+	buf.Reset()
+	transportJSONBufferPool.Put(buf)
+}
+
 type Server struct {
 	*mux.Router
 }
