@@ -256,7 +256,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 
 		buf.WriteString("\njsonbuf := getTransportJSONBuffer()")
 		buf.WriteString("\ndefer releaseTransportJSONBuffer(jsonbuf)")
-		buf.WriteString("\n_, err = io.Copy(jsonbuf, res.Body)")
+		buf.WriteString("\n_, err = io.Copy(jsonbuf, io.LimitReader(res.Body, MaxResponseSize))")
 		buf.WriteString("\ndefer res.Body.Close()")
 		buf.WriteString("\nif pdebug.Enabled {")
 		buf.WriteString("\nif err != nil {")
@@ -328,6 +328,7 @@ func generateClientCode(out io.Writer, ctx *genctx) error {
 	)
 
 	buf.WriteString(`
+const MaxResponseSize = (1<<20)*2
 var _ = bytes.MinRead
 var _ = json.Decoder{}
 var transportJSONBufferPool = sync.Pool{

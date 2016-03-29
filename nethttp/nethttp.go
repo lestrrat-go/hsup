@@ -268,7 +268,7 @@ default:
 
 			buf.WriteString("\njsonbuf := getTransportJSONBuffer()")
 			buf.WriteString("\ndefer releaseTransportJSONBuffer(jsonbuf)")
-			buf.WriteString("\nif _, err := io.Copy(jsonbuf, r.Body); err != nil {")
+			buf.WriteString("\nif _, err := io.Copy(jsonbuf, http.MaxBytesReader(w, r.Body, MaxPostSize)); err != nil {")
 			buf.WriteString("\nhttpError(w, `Failed to read request body`, http.StatusInternalServerError, err)")
 			buf.WriteString("\n}")
 			buf.WriteString("\ndefer r.Body.Close()")
@@ -452,6 +452,7 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 	)
 
 	buf.WriteString(`
+const MaxPostSize = (1<<20)*2
 var _ = json.Decoder{}
 var _ = urlenc.Marshal
 var transportJSONBufferPool = sync.Pool{
