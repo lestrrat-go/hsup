@@ -498,7 +498,8 @@ func New() *Server {
 	return s
 }
 
-func httpError(w http.ResponseWriter, message string, st int, err error) {
+var httpError func(http.ResponseWriter, string, int, error) = defaultHTTPError
+func defaultHTTPError(w http.ResponseWriter, message string, st int, err error) {
   if pdebug.Enabled {
 		if err == nil {
 	    pdebug.Printf("HTTP Error %s", message)
