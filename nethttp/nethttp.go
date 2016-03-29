@@ -191,9 +191,10 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	if method == "" {
 		method = "get"
 	}
-	buf.WriteString("\nif strings.ToLower(r.Method) != `")
-	fmt.Fprintf(&buf, "%s", method)
-	buf.WriteString("` {\nhttpError(w, `Method was ` + r.Method, http.StatusNotFound, nil)\n}\n")
+	fmt.Fprintf(&buf, "\nif strings.ToLower(r.Method) != `%s` {", method)
+	fmt.Fprintf(&buf, "\nhttpError(w, `Method was ` + r.Method + `, expected %s`, http.StatusNotFound, nil)", method)
+	buf.WriteString("\nreturn")
+	buf.WriteString("\n}\n")
 
 	payloadType := ctx.RequestPayloadType[name]
 
