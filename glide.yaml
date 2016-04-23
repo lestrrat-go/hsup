@@ -1,0 +1,14 @@
+package: github.com/lestrrat/go-hsup
+import:
+- package: github.com/gorilla/mux
+- package: github.com/jessevdk/go-flags
+- package: github.com/lestrrat/go-jshschema
+- package: github.com/lestrrat/go-jsschema
+- package: github.com/lestrrat/go-jsval
+  subpackages:
+  - builder
+- package: github.com/lestrrat/go-pdebug
+- package: github.com/lestrrat/go-urlenc
+- package: golang.org/x/net
+  subpackages:
+  - context
