@@ -9,6 +9,7 @@ import:
   - builder
 - package: github.com/lestrrat/go-pdebug
 - package: github.com/lestrrat/go-urlenc
+- package: github.com/pkg/errors
 - package: golang.org/x/net
   subpackages:
   - context
