@@ -8,40 +8,73 @@ import (
 
 	"github.com/jessevdk/go-flags"
 	"github.com/lestrrat/go-hsup"
+	"github.com/lestrrat/go-hsup/httpclient"
+	"github.com/lestrrat/go-hsup/nethttp"
+	"github.com/lestrrat/go-hsup/validator"
+	"github.com/pkg/errors"
 )
 
 func main() {
-	os.Exit(_main())
-}
-
-type options struct {
-	Dir       string `short:"d" long:"dir" required:"true" description:"Directory to place all files under"`
-	PkgPath   string
-	AppPkg    string   `short:"a" long:"apppkg" description:"Application package name"`
-	Schema    string   `short:"s" long:"schema" required:"true" description:"schema file to process"`
-	Flavor    []string `short:"f" long:"flavor" default:"nethttp" default:"validator" default:"httpclient" description:"what type of code to generate"`
-	Overwrite bool     `short:"O" long:"overwrite" description:"overwrite if file exists"`
-}
-
-func _main() int {
-	var opts options
-	if _, err := flags.Parse(&opts); err != nil {
+	if err := _main(); err != nil {
 		log.Printf("%s", err)
-		return 1
+		os.Exit(1)
+	}
+	os.Exit(0)
+}
+
+func _main() error {
+	// Remove every option that is prefixed
+	prefixes := map[string][]string{
+		"nethttp": nil,
+		"httpclient": nil,
+		"validator": nil,
+	}
+
+	var mainargs []string
+OUTER:
+	for i := 1; i < len(os.Args); i++ {
+		v := os.Args[i]
+		for prefix := range prefixes {
+			// --prefix.localname=var or --prefix.localname var
+			if !strings.HasPrefix(v, "--" + prefix + ".") {
+				continue
+			}
+
+			localname := v[len(prefix)+3:]
+			if len(localname) == 0 || localname[0] == '=' {
+				return errors.New("prefixed parameter must have a local name: " + prefix)
+			}
+
+			l := prefixes[prefix]
+			l = append(l, "--" + localname)
+			if len(os.Args) > i + 1 {
+				if nextv := os.Args[i+1]; len(nextv) > 0 && nextv[0] != '-' {
+					l = append(l, os.Args[i+1])
+					i++
+				}
+			}
+			prefixes[prefix] = l
+			continue OUTER
+		}
+
+		mainargs = append(mainargs, v)
+	}
+
+	var opts hsup.Options
+	if _, err := flags.ParseArgs(&opts, mainargs); err != nil {
+		return errors.Wrap(err, "failed to parse arguments")
 	}
 
 	// opts.Dir better be under GOPATH
 	for _, path := range strings.Split(os.Getenv("GOPATH"), string([]rune{filepath.ListSeparator})) {
 		path, err := filepath.Abs(path)
 		if err != nil {
-			log.Printf("%s", err)
-			return 1
+			return errors.Wrap(err, "failed to get absolute path")
 		}
 		path = filepath.Join(path, "src")
 		dir, err := filepath.Abs(opts.Dir)
 		if err != nil {
-			log.Printf("%s", err)
-			return 1
+			return errors.Wrap(err, "failed to get absolute dir")
 		}
 
 		if strings.HasPrefix(dir, path) {
@@ -51,8 +84,7 @@ func _main() int {
 	}
 
 	if opts.PkgPath == "" {
-		log.Printf("Target path should be under GOPATH")
-		return 1
+		return errors.New("target path should be under GOPATH")
 	}
 
 	// Unless otherwise specified, last portion of the PkgPath is
@@ -61,62 +93,24 @@ func _main() int {
 		opts.AppPkg = filepath.Base(opts.PkgPath)
 	}
 
-	var cb func(options) error
+	var cb func(hsup.Options) error
 	for _, f := range opts.Flavor {
 		log.Printf(" ===> running flavor '%s'", f)
 		switch f {
 		case "nethttp":
-			cb = doNetHTTP
+			cb = nethttp.Process
 		case "httpclient":
-			cb = doHTTPClient
+			cb = httpclient.Process
 		case "validator":
-			cb = doValidator
+			cb = validator.Process
 		default:
-			log.Printf("unknown argument to `flavor`: %s", opts.Flavor)
-			return 1
+			return errors.New("unknown argument to `flavor`: " + f)
 		}
+		opts.Args = prefixes[f]
 
 		if err := cb(opts); err != nil {
-			log.Printf("%s", err)
-			return 1
+			return errors.Wrap(err, "failed to execute handler")
 		}
 	}
-	return 0
-}
-
-func doNetHTTP(opts options) error {
-	b := hsup.NetHTTP
-	b.Dir = opts.Dir
-	b.AppPkg = opts.AppPkg
-	b.PkgPath = opts.PkgPath
-	b.Overwrite = opts.Overwrite
-	if err := b.ProcessFile(opts.Schema); err != nil {
-		return err
-	}
 	return nil
 }
-
-func doHTTPClient(opts options) error {
-	b := hsup.HTTPClient
-	b.Dir = opts.Dir
-	b.AppPkg = opts.AppPkg
-	b.PkgPath = opts.PkgPath
-	b.Overwrite = opts.Overwrite
-	if err := b.ProcessFile(opts.Schema); err != nil {
-		return err
-	}
-	return nil
-}
-
-func doValidator(opts options) error {
-	b := hsup.Validator
-	b.Dir = opts.Dir
-	b.AppPkg = opts.AppPkg
-	b.PkgPath = opts.PkgPath
-	b.Overwrite = opts.Overwrite
-	if err := b.ProcessFile(opts.Schema); err != nil {
-		return err
-	}
-	return nil
-}
-

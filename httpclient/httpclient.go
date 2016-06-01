@@ -2,7 +2,6 @@ package httpclient
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"go/format"
 	"io"
@@ -13,9 +12,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jessevdk/go-flags"
+	"github.com/lestrrat/go-hsup"
 	"github.com/lestrrat/go-hsup/internal/genutil"
 	"github.com/lestrrat/go-hsup/internal/parser"
 	"github.com/lestrrat/go-jshschema"
+	"github.com/pkg/errors"
 )
 
 type Builder struct {
@@ -38,6 +40,26 @@ type genctx struct {
 	Dir         string
 	Overwrite   bool
 	PkgPath     string
+}
+
+type options struct {
+}
+
+func Process(opts hsup.Options) error {
+	var localopts options
+	if _, err := flags.ParseArgs(&localopts, opts.Args); err != nil {
+		return errors.Wrap(err, "failed to parse command line arguments")
+	}
+
+	b := New()
+	b.Dir = opts.Dir
+	b.AppPkg = opts.AppPkg
+	b.PkgPath = opts.PkgPath
+	b.Overwrite = opts.Overwrite
+	if err := b.ProcessFile(opts.Schema); err != nil {
+		return err
+	}
+	return nil
 }
 
 func New() *Builder {
