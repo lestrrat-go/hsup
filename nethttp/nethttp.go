@@ -192,6 +192,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 		method = "get"
 	}
 	fmt.Fprintf(&buf, "\nif strings.ToLower(r.Method) != `%s` {", method)
+	fmt.Fprintf(&buf, "\n" + `w.Header().Set("Allow", %s)`, strconv.Quote(method))
 	fmt.Fprintf(&buf, "\nhttpError(w, `Method was ` + r.Method + `, expected %s`, http.StatusNotFound, nil)", method)
 	buf.WriteString("\nreturn")
 	buf.WriteString("\n}\n")
