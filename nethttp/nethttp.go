@@ -78,9 +78,9 @@ func (b *Builder) ProcessFile(f string) error {
 	log.Printf(" ===> Using schema file '%s'", f)
 	s, err := hschema.ReadFile(f)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to read JSON Hyper Schema file")
 	}
-	return b.Process(s)
+	return errors.Wrap(b.Process(s), "failed to process the JSON Hyper Schema")
 }
 
 func (b *Builder) Process(s *hschema.HyperSchema) error {
@@ -102,11 +102,11 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 	}
 
 	if err := parse(&ctx, s); err != nil {
-		return err
+		return errors.Wrap(err, "failed to parse schema")
 	}
 
 	if err := generateFiles(&ctx); err != nil {
-		return err
+		return errors.Wrap(err, "failed to generate files")
 	}
 
 	log.Printf(" <=== All files generated")
@@ -146,7 +146,7 @@ func parseExtras(ctx *genctx, s *hschema.HyperSchema) error {
 			}
 
 			if err := parseServerHints(ctx, v.(map[string]interface{})); err != nil {
-				return err
+				return errors.Wrap(err, "failed to parse server hints")
 			}
 		}
 	}
@@ -156,19 +156,19 @@ func parseExtras(ctx *genctx, s *hschema.HyperSchema) error {
 func parse(ctx *genctx, s *hschema.HyperSchema) error {
 	pres, err := parser.Parse(s)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to parse schema")
 	}
 	ctx.Result = pres
 
 	if err := parseExtras(ctx, s); err != nil {
-		return err
+		return errors.Wrap(err, "failed to parse extras")
 	}
 
 	for _, link := range s.Links {
 		methodName := genutil.TitleToName(link.Title)
 		methodBody, err := makeMethod(ctx, methodName, link)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "failed to make method '" + methodName +"'")
 		}
 		ctx.Methods[methodName] = methodBody
 		if m := link.Extras; len(m) > 0 {
@@ -245,7 +245,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 					if !v.IsResolved() {
 						rv, err := v.Resolve(ctx.Schema)
 						if err != nil {
-							return "", err
+							return "", errors.Wrap(err, "failed to resolve schema")
 						}
 						v = rv
 					}
@@ -339,7 +339,7 @@ func generateFile(ctx *genctx, fn string, cb func(io.Writer, *genctx) error, for
 	log.Printf(" + Generating file '%s'", fn)
 	f, err := genutil.CreateFile(fn)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to generate file '" + fn + "'")
 	}
 	defer f.Close()
 	return cb(f, ctx)
@@ -358,7 +358,7 @@ func generateFiles(ctxif interface{}) error {
 	}
 	for fn, cb := range sysfiles {
 		if err := generateFile(ctx, fn, cb, true); err != nil {
-			return err
+			return errors.Wrap(err, "failed to generate file '" + fn + "'")
 		}
 	}
 
@@ -372,7 +372,7 @@ func generateFiles(ctxif interface{}) error {
 	}
 	for fn, cb := range userfiles {
 		if err := generateFile(ctx, fn, cb, false); err != nil {
-			return err
+			return errors.Wrap(err, "failed to generate file '" + fn +"'")
 		}
 	}
 

@@ -1,15 +1,16 @@
 package parser
 
 import (
-	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/lestrrat/go-hsup/ext"
 	"github.com/lestrrat/go-hsup/internal/genutil"
 	"github.com/lestrrat/go-jshschema"
 	"github.com/lestrrat/go-jsval"
+	"github.com/pkg/errors"
 )
 
 type Result struct {
@@ -38,7 +39,7 @@ func Parse(s *hschema.HyperSchema) (*Result, error) {
 	}
 
 	if err := parse(&ctx, s); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to parse JSON hyper schema")
 	}
 	return &ctx, nil
 }
@@ -51,19 +52,23 @@ func parse(ctx *Result, s *hschema.HyperSchema) error {
 		transportNs = "model"
 	}
 	for i, link := range s.Links {
+		if len(link.Title) == 0 {
+			return errors.New("link " + strconv.Itoa(i) + ": hsup requires a 'title' element to generate resources")
+		}
+
 		methodName := genutil.TitleToName(link.Title)
 		// Got to do this first, because validators are used in makeMethod()
 		if ls := link.Schema; ls != nil {
 			if !ls.IsResolved() {
 				rs, err := ls.Resolve(ctx.Schema)
 				if err != nil {
-					return err
+					return errors.Wrap(err, "failed to resolve schema (request)")
 				}
 				ls = rs
 			}
 			v, err := genutil.MakeValidator(ls, ctx.Schema)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "failed to create request validator")
 			}
 
 			if gt, ok := ls.Extras[ext.TypeKey]; ok {
@@ -79,13 +84,13 @@ func parse(ctx *Result, s *hschema.HyperSchema) error {
 			if !ls.IsResolved() {
 				rs, err := ls.Resolve(ctx.Schema)
 				if err != nil {
-					return err
+					return errors.Wrap(err, "failed to resolve target schema (response)")
 				}
 				ls = rs
 			}
 			v, err := genutil.MakeValidator(ls, ctx.Schema)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "failed to create response validator")
 			}
 			ctx.ResponsePayloadType[methodName] = "interface{}"
 			if gt, ok := ls.Extras[ext.TypeKey]; ok {

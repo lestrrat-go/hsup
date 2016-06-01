@@ -14,6 +14,7 @@ import (
 	"github.com/lestrrat/go-jsschema"
 	"github.com/lestrrat/go-jsval"
 	"github.com/lestrrat/go-jsval/builder"
+	"github.com/pkg/errors"
 )
 
 var rxif = regexp.MustCompile(`\s*interface\s*{\s*}\s*`)
@@ -44,7 +45,7 @@ func MakeValidator(s *schema.Schema, ctx interface{}) (*jsval.JSVal, error) {
 	b := builder.New()
 	v, err := b.BuildWithCtx(s, ctx)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to build validator from schema")
 	}
 
 	return v, nil
@@ -75,12 +76,12 @@ func CreateFile(fn string) (*os.File, error) {
 	dir := filepath.Dir(fn)
 	if _, err := os.Stat(dir); err != nil {
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "failed to create directory")
 		}
 	}
 	f, err := os.Create(fn)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to create file")
 	}
 	return f, nil
 }
@@ -90,13 +91,13 @@ func WriteFmtCode(out io.Writer, buf *bytes.Buffer) error {
 	if err != nil {
 		log.Printf("Failed to cleanup Go code (probably a syntax error). Generating file anyway")
 		if _, err := buf.WriteTo(out); err != nil {
-			return err
+			return errors.Wrap(err, "failed to write (broken) source to output")
 		}
 		return nil
 	}
 
 	if _, err := out.Write(fsrc); err != nil {
-		return err
+		return errors.Wrap(err, "failed to write to output")
 	}
 	return nil
 }
