@@ -637,10 +637,11 @@ func getInteger(v url.Values, f string) ([]int64, error) {
 	return ret, nil
 }
 
-func httpWithContext(h func(context.Context, http.ResponseWriter, *http.Request)) http.Handler {
-	return func (w http.ResponseWriter, r *http.Request) {
+type HandlerWithContext func(context.Context, http.ResponseWriter, *http.Request)
+func httpWithContext(h HandlerWithContext) http.HandlerFunc {
+	return http.HandlerFunc(func (w http.ResponseWriter, r *http.Request) {
 		h(NewContext(r), w, r)
-	}
+	})
 }
 
 `)
