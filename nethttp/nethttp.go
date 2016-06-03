@@ -317,7 +317,7 @@ default:
 		buf.WriteString("\n}")
 	}
 
-	fmt.Fprintf(&buf, "\ndo%s(NewContext(r), w, r", name)
+	fmt.Fprintf(&buf, "\ndo%s(ctx, w, r", name)
 	if _, ok := ctx.RequestValidators[name]; ok {
 		buf.WriteString(`, payload`)
 	}
