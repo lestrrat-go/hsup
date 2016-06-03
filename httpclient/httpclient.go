@@ -255,14 +255,25 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 		buf.WriteString("\nif pdebug.Enabled {")
 		fmt.Fprintf(&buf, "\npdebug.Printf(%s, u.String())", strconv.Quote("GET to %s"))
 		buf.WriteString("\n}")
-		buf.WriteString("\n" + `res, err := c.Client.Get(u.String())`)
+		buf.WriteString("\n" + `req, err := http.NewRequest("GET", u.String(), nil)`)
+		buf.WriteString(errout)
+		buf.WriteString("\n" + `if c.BasicAuth.Username != "" && c.BasicAuth.Password != "" {`)
+		buf.WriteString("\nreq.SetBasicAuth(c.BasicAuth.Username, c.BasicAuth.Password)")
+		buf.WriteString("\n}")
+		buf.WriteString("\n" + `res, err := c.Client.Do(req)`)
 		buf.WriteString(errout)
 	case "post":
 		buf.WriteString("\nif pdebug.Enabled {")
 		fmt.Fprintf(&buf, "\npdebug.Printf(%s, u.String())", strconv.Quote("POST to %s"))
 		buf.WriteString("\n" + `pdebug.Printf("%s", buf.String())`)
 		buf.WriteString("\n}")
-		buf.WriteString("\n" + `res, err := c.Client.Post(u.String(), "application/json", &buf)`)
+		buf.WriteString("\n" + `req, err := http.NewRequest("GET", u.String(), &buf)`)
+		buf.WriteString(errout)
+		buf.WriteString("\n" + `req.Header.Set("Content-Type", "application/json")`)
+		buf.WriteString("\n" + `if c.BasicAuth.Username != "" && c.BasicAuth.Password != "" {`)
+		buf.WriteString("\nreq.SetBasicAuth(c.BasicAuth.Username, c.BasicAuth.Password)")
+		buf.WriteString("\n}")
+		buf.WriteString("\n" + `res, err := c.Client.Do(req)`)
 		buf.WriteString(errout)
 	}
 	buf.WriteString("\nif res.StatusCode != http.StatusOK {")
@@ -370,9 +381,13 @@ func releaseTransportJSONBuffer(buf *bytes.Buffer) {
 	transportJSONBufferPool.Put(buf)
 }
 
-
+type BasicAuth struct {
+	Username string
+	Password string
+}
 
 type Client struct {
+	BasicAuth BasicAuth
 	Client *http.Client
 	Endpoint string
 }
