@@ -24,6 +24,7 @@ import (
 type Builder struct {
 	AppPkg       string
 	ClientPkg    string
+	CLISchema    string
 	Dir          string
 	Overwrite    bool
 	PkgPath      string
@@ -38,6 +39,7 @@ type genctx struct {
 	*parser.Result
 	AppPkg       string
 	ClientPkg    string
+	CLISchema    string
 	Dir          string
 	Overwrite    bool
 	PkgPath      string
@@ -46,6 +48,7 @@ type genctx struct {
 }
 
 type options struct {
+	CLISchema string `long:"clischema"`
 }
 
 func Process(opts hsup.Options) error {
@@ -59,6 +62,7 @@ func Process(opts hsup.Options) error {
 	b.AppPkg = opts.AppPkg
 	b.PkgPath = opts.PkgPath
 	b.Overwrite = opts.Overwrite
+	b.CLISchema = localopts.CLISchema
 	if err := b.ProcessFile(opts.Schema); err != nil {
 		return err
 	}
@@ -95,6 +99,7 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 	ctx := genctx{
 		AppPkg:       b.AppPkg,
 		ClientPkg:    b.ClientPkg,
+		CLISchema:    b.CLISchema,
 		Dir:          b.Dir,
 		Overwrite:    b.Overwrite,
 		PkgPath:      b.PkgPath,
@@ -168,7 +173,7 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 		methodName := genutil.TitleToName(link.Title)
 		methodBody, err := makeMethod(ctx, methodName, link)
 		if err != nil {
-			return errors.Wrap(err, "failed to make method '" + methodName +"'")
+			return errors.Wrap(err, "failed to make method '"+methodName+"'")
 		}
 		ctx.Methods[methodName] = methodBody
 		if m := link.Extras; len(m) > 0 {
@@ -204,7 +209,7 @@ func parse(ctx *genctx, s *hschema.HyperSchema) error {
 func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	buf := bytes.Buffer{}
 
-	fmt.Fprintf(&buf, `func http%s(w http.ResponseWriter, r *http.Request) {`, name)
+	fmt.Fprintf(&buf, `func http%s(ctx context.Context, w http.ResponseWriter, r *http.Request) {`, name)
 	buf.WriteString("\nif pdebug.Enabled {")
 	fmt.Fprintf(&buf, "\ng := pdebug.Marker(%s)", strconv.Quote("http"+name))
 	buf.WriteString("\ndefer g.End()")
@@ -339,10 +344,22 @@ func generateFile(ctx *genctx, fn string, cb func(io.Writer, *genctx) error, for
 	log.Printf(" + Generating file '%s'", fn)
 	f, err := genutil.CreateFile(fn)
 	if err != nil {
-		return errors.Wrap(err, "failed to generate file '" + fn + "'")
+		return errors.Wrap(err, "failed to generate file '"+fn+"'")
 	}
-	defer f.Close()
-	return cb(f, ctx)
+	closed := false
+	defer func() {
+		if !closed {
+			f.Close()
+		}
+	}()
+
+	if err := cb(f, ctx); err != nil {
+		f.Close()
+		closed = true
+		os.Remove(fn)
+		return errors.Wrap(err, "callback failed")
+	}
+	return nil
 }
 
 func generateFiles(ctxif interface{}) error {
@@ -358,7 +375,7 @@ func generateFiles(ctxif interface{}) error {
 	}
 	for fn, cb := range sysfiles {
 		if err := generateFile(ctx, fn, cb, true); err != nil {
-			return errors.Wrap(err, "failed to generate file '" + fn + "'")
+			return errors.Wrap(err, "failed to generate file '"+fn+"'")
 		}
 	}
 
@@ -372,7 +389,7 @@ func generateFiles(ctxif interface{}) error {
 	}
 	for fn, cb := range userfiles {
 		if err := generateFile(ctx, fn, cb, false); err != nil {
-			return errors.Wrap(err, "failed to generate file '" + fn +"'")
+			return errors.Wrap(err, "failed to generate file '"+fn+"'")
 		}
 	}
 
@@ -385,21 +402,88 @@ func generateExecutableCode(out io.Writer, ctx *genctx) error {
 	genutil.WriteImports(
 		&buf,
 		[]string{"log", "os"},
-		[]string{ctx.PkgPath, "github.com/jessevdk/go-flags"},
+		[]string{ctx.PkgPath, "github.com/jessevdk/go-flags", "github.com/pkg/errors"},
 	)
 
-	buf.WriteString(`type options struct {` + "\n")
-	buf.WriteString(`Listen string ` + "`" + `short:"l" long:"listen" default:":8080" description:"Listen address"` + "`\n")
-	buf.WriteString("}\n")
-	buf.WriteString(`func main() { os.Exit(_main()) }` + "\n")
-	buf.WriteString(`func _main() int {
+	f := ctx.CLISchema
+	if f == "" {
+		buf.WriteString(`type options struct {` + "\n")
+		buf.WriteString(`Listen string ` + "`" + `short:"l" long:"listen" default:":8080" description:"Listen address"` + "`\n")
+		buf.WriteString("}\n")
+	} else {
+		s, err := schema.ReadFile(f)
+		if err != nil {
+			return errors.Wrap(err, "failed to read CLI schema file '"+f+"'")
+		}
+
+		buf.WriteString(`type options struct {` + "\n")
+		for name, pschema := range s.Properties {
+			var typ string
+			typv, ok := pschema.Extras[ext.TypeKey]
+			if !ok {
+				switch pschema.Type[0] {
+				case schema.IntegerType:
+					typ = "int"
+				case schema.StringType:
+					typ = "string"
+				case schema.BooleanType:
+					typ = "bool"
+				case schema.NumberType:
+					typ = "float64"
+				default:
+					return errors.New("complex types cannot be automatically deduced. consider using 'hsup.type' key")
+				}
+			} else {
+				typ, ok = typv.(string)
+				if !ok {
+					return errors.New("could not determine parameter type")
+				}
+			}
+			buf.WriteString(genutil.TitleToName(name))
+			buf.WriteByte(' ')
+			buf.WriteString(typ)
+			buf.WriteByte(' ')
+			buf.WriteString("`" + `long:"` + name + `"` + "`")
+		}
+		buf.WriteString("}\n")
+	}
+
+	buf.WriteString(`
+type ignorableError interface {
+	Ignorable() bool
+}
+
+func isIgnorableError(err error) bool {
+	if i, ok := err.(ignorableError); ok {
+		return i.Ignorable()
+	}
+	return false
+}
+
+func main() {
+	status := 1
+	if err := _main(); err != nil {
+		if !isIgnorableError(err) {
+			println(err.Error())
+		} else {
+			status = 0
+		}
+	}
+	os.Exit(status)
+}
+
+func _main() error {
 	var opts options
 	if _, err := flags.Parse(&opts); err != nil {
-		log.Printf("%s", err)
-		return 1
+		return errors.Wrap(err, "failed to parse command line options")
 	}
 `)
-	buf.WriteString(`log.Printf("Server listening on %s", opts.Listen)` + "\n")
+	fmt.Fprintf(&buf, "if err := %s.ProcessOpts(&opts); err != nil {\n", ctx.AppPkg)
+	buf.WriteString(`return errors.Wrap(err, "failed to process options")
+	}
+
+	log.Printf("Server listening on %s", opts.Listen)
+`)
 	fmt.Fprintf(&buf, `if err := %s.Run(opts.Listen); err != nil {`+"\n", ctx.AppPkg)
 	buf.WriteString(` log.Printf("%s", err)
 		return 1
@@ -553,6 +637,12 @@ func getInteger(v url.Values, f string) ([]int64, error) {
 	return ret, nil
 }
 
+func httpWithContext(h func(context.Context, http.ResponseWriter, *http.Request)) http.Handler {
+	return func (w http.ResponseWriter, r *http.Request) {
+		h(NewContext(r), w, r)
+	}
+}
+
 `)
 
 	for _, methodName := range ctx.MethodNames {
@@ -570,14 +660,15 @@ func getInteger(v url.Values, f string) ([]int64, error) {
 	for _, path := range paths {
 		method := ctx.PathToMethods[path]
 
-		fmt.Fprintf(&buf, "\nr.HandleFunc(`%s`, ", path)
+		fmt.Fprintf(&buf, "\nr.HandleFunc(`%s`, httpWithContext(", path)
 		for _, w := range ctx.MethodWrappers[method] {
 			fmt.Fprintf(&buf, "%s(", w)
 		}
-		fmt.Fprintf(&buf, "http%s)", method)
+		fmt.Fprintf(&buf, "http%s", method)
 		for range ctx.MethodWrappers[method] {
 			buf.WriteString(")")
 		}
+		buf.WriteString("))")
 	}
 	buf.WriteString("\n}\n")
 
