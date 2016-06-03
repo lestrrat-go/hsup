@@ -267,7 +267,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 		fmt.Fprintf(&buf, "\npdebug.Printf(%s, u.String())", strconv.Quote("POST to %s"))
 		buf.WriteString("\n" + `pdebug.Printf("%s", buf.String())`)
 		buf.WriteString("\n}")
-		buf.WriteString("\n" + `req, err := http.NewRequest("GET", u.String(), &buf)`)
+		buf.WriteString("\n" + `req, err := http.NewRequest("POST", u.String(), &buf)`)
 		buf.WriteString(errout)
 		buf.WriteString("\n" + `req.Header.Set("Content-Type", "application/json")`)
 		buf.WriteString("\n" + `if c.BasicAuth.Username != "" && c.BasicAuth.Password != "" {`)
