@@ -596,7 +596,8 @@ var NewContext func(* http.Request) context.Context= func(r *http.Request) conte
 }
 
 func Run(l string) error {
-	return http.ListenAndServe(l, New())
+	s := New()
+	return http.ListenAndServe(l, s.makeHandler())
 }
 
 func New() *Server {
@@ -646,6 +647,15 @@ func httpWithContext(h HandlerWithContext) http.HandlerFunc {
 
 `)
 
+	buf.WriteString("func (s *Server) makeHandler() http.Handler {\n")
+	buf.WriteString("var h http.Handler\n")
+	buf.WriteString("h = s\n")
+	for _, middleware := range ctx.Middlewares {
+		fmt.Fprintf(&buf, "h = %s.Wrap(h)\n", middleware)
+	}
+	buf.WriteString("return h\n")
+	buf.WriteString("}\n\n")
+
 	for _, methodName := range ctx.MethodNames {
 		buf.WriteString(ctx.Methods[methodName])
 		buf.WriteString("\n")
@@ -653,6 +663,7 @@ func httpWithContext(h HandlerWithContext) http.HandlerFunc {
 
 	buf.WriteString("func (s *Server) SetupRoutes() {")
 	buf.WriteString("\nr := s.Router")
+
 	paths := make([]string, 0, len(ctx.PathToMethods))
 	for path := range ctx.PathToMethods {
 		paths = append(paths, path)
