@@ -18,6 +18,7 @@ type Result struct {
 	Methods             map[string]string
 	MethodNames         []string
 	MethodWrappers      map[string][]string
+	Middlewares         []string
 	PathToMethods       map[string]string
 	RequestPayloadType  map[string]string
 	RequestValidators   map[string]*jsval.JSVal
@@ -45,6 +46,18 @@ func Parse(s *hschema.HyperSchema) (*Result, error) {
 }
 
 func parse(ctx *Result, s *hschema.HyperSchema) error {
+	middlewares, ok := s.Extras[ext.MiddlewareKey]
+	if ok {
+		var mwlist []interface{}
+		mwlist, ok = middlewares.([]interface{})
+		if ok {
+			ctx.Middlewares = make([]string, len(mwlist))
+			for i, mw := range mwlist {
+				ctx.Middlewares[i] = mw.(string)
+			}
+		}
+	}
+
 	// We want to know the namespace of the transport.
 	// Normally we just use "model"
 	transportNs, ok := s.Extras[ext.TransportNsKey]
