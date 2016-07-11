@@ -300,6 +300,7 @@ default:
 			buf.WriteString("\ndefer releaseTransportJSONBuffer(jsonbuf)")
 			buf.WriteString("\nif _, err := io.Copy(jsonbuf, io.LimitReader(r.Body, MaxPostSize)); err != nil {")
 			buf.WriteString("\nhttpError(w, `Failed to read request body`, http.StatusInternalServerError, err)")
+			buf.WriteString("\nreturn")
 			buf.WriteString("\n}")
 			buf.WriteString("\ndefer r.Body.Close()")
 			buf.WriteString("\nif pdebug.Enabled {")
