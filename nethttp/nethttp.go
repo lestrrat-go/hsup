@@ -313,12 +313,14 @@ default:
 
 			// If this guy is a multipart/form-data, we want to populate the
 			// multipart form field
-			if l.EncType == "multipart/form-data" {
-				buf.WriteString("\n\nif err := r.ParseMultipartForm(MaxPostSize); err != nil {")
+			if l.EncType == "multipart/form-data"{
+				buf.WriteString("\n\nif r.Header.Get(\"Content-Type\") == \"multipart/form-data\" {")
+				buf.WriteString("\nif err := r.ParseMultipartForm(MaxPostSize); err != nil {")
 				buf.WriteString("\nhttpError(w, `Invalid multipart data`, http.StatusInternalServerError, err)")
 				buf.WriteString("\nreturn")
 				buf.WriteString("\n}")
 				buf.WriteString("\npayload.MultipartForm = r.MultipartForm")
+				buf.WriteString("\n}")
 			}
 		}
 
