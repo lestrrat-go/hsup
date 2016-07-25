@@ -310,6 +310,16 @@ default:
 			buf.WriteString("\nhttpError(w, `Invalid JSON input`, http.StatusInternalServerError, err)")
 			buf.WriteString("\nreturn")
 			buf.WriteString("\n}")
+
+			// If this guy is a multipart/form-data, we want to populate the
+			// multipart form field
+			if l.EncType == "multipart/form-data" {
+				buf.WriteString("\n\nif err := r.ParseMultipartForm(MaxPostSize); err != nil {")
+				buf.WriteString("\nhttpError(w, `Invalid multipart data`, http.StatusInternalServerError, err)")
+				buf.WriteString("\nreturn")
+				buf.WriteString("\n}")
+				buf.WriteString("\npayload.MultipartForm = r.MultipartForm")
+			}
 		}
 
 		fmt.Fprintf(&buf, "\n\nif err := %s.%s.Validate(&payload); err != nil {", ctx.ValidatorPkg, v.Name)
