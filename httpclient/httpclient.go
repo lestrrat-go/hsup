@@ -244,7 +244,16 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 			buf.WriteString(errout)
 			buf.WriteString("\nu.RawQuery = string(buf)")
 		} else {
-			buf.WriteString("\n" + `buf := bytes.Buffer{}`)
+			buf.WriteString("\nvar buf bytes.Buffer")
+			if l.EncType == "multipart/form-data" {
+				buf.WriteString("\nw := multipart.NewWriter(&buf)")
+				buf.WriteString("\nvar jsbuf bytes.Buffer")
+				buf.WriteString("\nerr = json.NewEncoder(&jsbuf).Encode(in)")
+				buf.WriteString(errout)
+				buf.WriteString("\nw.WriteField(\"payload\", jsbuf.String())")
+				buf.WriteString("\nerr = w.Close()")
+				buf.WriteString(errout)
+			}
 			buf.WriteString("\n" + `err = json.NewEncoder(&buf).Encode(in)`)
 			buf.WriteString(errout)
 		}
@@ -269,7 +278,14 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 		buf.WriteString("\n}")
 		buf.WriteString("\n" + `req, err := http.NewRequest("POST", u.String(), &buf)`)
 		buf.WriteString(errout)
-		buf.WriteString("\n" + `req.Header.Set("Content-Type", "application/json")`)
+
+		if l.EncType == "multipart/form-data" {
+			// Must create a multipart/form-data request
+			buf.WriteString("\nreq.Header.Set(\"Content-Type\", w.FormDataContentType())")
+		} else {
+			buf.WriteString("\n" + `req.Header.Set("Content-Type", "application/json")`)
+		}
+
 		buf.WriteString("\n" + `if c.BasicAuth.Username != "" && c.BasicAuth.Password != "" {`)
 		buf.WriteString("\nreq.SetBasicAuth(c.BasicAuth.Username, c.BasicAuth.Password)")
 		buf.WriteString("\n}")
@@ -356,7 +372,7 @@ func generateClientCode(out io.Writer, ctx *genctx) error {
 
 	genutil.WriteImports(
 		&buf,
-		[]string{"bytes", "encoding/json", "fmt", "io", "net/http", "net/url", "sync"},
+		[]string{"bytes", "encoding/json", "fmt", "io", "mime/multipart", "net/http", "net/url", "sync"},
 		imports,
 	)
 
@@ -364,6 +380,7 @@ func generateClientCode(out io.Writer, ctx *genctx) error {
 const MaxResponseSize = (1<<20)*2
 var _ = bytes.MinRead
 var _ = json.Decoder{}
+var _ = multipart.Form{}
 var transportJSONBufferPool = sync.Pool{
 	New: allocTransportJSONBuffer,
 }

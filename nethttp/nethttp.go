@@ -298,11 +298,34 @@ default:
 
 			buf.WriteString("\njsonbuf := getTransportJSONBuffer()")
 			buf.WriteString("\ndefer releaseTransportJSONBuffer(jsonbuf)")
+			buf.WriteString("\n\nswitch ct := r.Header.Get(\"Content-Type\"); {")
+			buf.WriteString("\ncase ct == \"application/json\":")
 			buf.WriteString("\nif _, err := io.Copy(jsonbuf, io.LimitReader(r.Body, MaxPostSize)); err != nil {")
 			buf.WriteString("\nhttpError(w, `Failed to read request body`, http.StatusInternalServerError, err)")
 			buf.WriteString("\nreturn")
 			buf.WriteString("\n}")
 			buf.WriteString("\ndefer r.Body.Close()")
+			// If this is a multipart request, we must extract out the "payload"
+			// field, and treat that as JSON
+			if l.EncType == "multipart/form-data"{
+				buf.WriteString("\ncase strings.HasPrefix(ct, \"multipart/\"):")
+				buf.WriteString("\nif err := r.ParseMultipartForm(MaxPostSize); err != nil {")
+				buf.WriteString("\nhttpError(w, `Invalid multipart data`, http.StatusInternalServerError, err)")
+				buf.WriteString("\nreturn")
+				buf.WriteString("\n}")
+				buf.WriteString("\nvals, ok := r.MultipartForm.Value[\"payload\"]")
+				buf.WriteString("\nif ok && len(vals) > 0 {")
+				buf.WriteString("\nif _, err := jsonbuf.WriteString(vals[0]); err != nil {")
+				buf.WriteString("\nhttpError(w, `Failed to read payload`, http.StatusInternalServerError, err)")
+				buf.WriteString("\nreturn")
+				buf.WriteString("\n}")
+				buf.WriteString("\n}")
+				buf.WriteString("\npayload.MultipartForm = r.MultipartForm")
+			}
+			buf.WriteString("\ndefault:")
+			buf.WriteString("\nhttpError(w, `Invalid content-type`, http.StatusInternalServerError, nil)")
+			buf.WriteString("\n}")
+
 			buf.WriteString("\nif pdebug.Enabled {")
 			buf.WriteString("\npdebug.Printf(`-----> %s`, jsonbuf.Bytes())")
 			buf.WriteString("\n}")
@@ -310,18 +333,6 @@ default:
 			buf.WriteString("\nhttpError(w, `Invalid JSON input`, http.StatusInternalServerError, err)")
 			buf.WriteString("\nreturn")
 			buf.WriteString("\n}")
-
-			// If this guy is a multipart/form-data, we want to populate the
-			// multipart form field
-			if l.EncType == "multipart/form-data"{
-				buf.WriteString("\n\nif r.Header.Get(\"Content-Type\") == \"multipart/form-data\" {")
-				buf.WriteString("\nif err := r.ParseMultipartForm(MaxPostSize); err != nil {")
-				buf.WriteString("\nhttpError(w, `Invalid multipart data`, http.StatusInternalServerError, err)")
-				buf.WriteString("\nreturn")
-				buf.WriteString("\n}")
-				buf.WriteString("\npayload.MultipartForm = r.MultipartForm")
-				buf.WriteString("\n}")
-			}
 		}
 
 		fmt.Fprintf(&buf, "\n\nif err := %s.%s.Validate(&payload); err != nil {", ctx.ValidatorPkg, v.Name)
