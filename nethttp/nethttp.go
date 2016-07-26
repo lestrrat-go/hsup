@@ -324,6 +324,7 @@ default:
 			}
 			buf.WriteString("\ndefault:")
 			buf.WriteString("\nhttpError(w, `Invalid content-type`, http.StatusInternalServerError, nil)")
+			buf.WriteString("\nreturn")
 			buf.WriteString("\n}")
 
 			buf.WriteString("\nif pdebug.Enabled {")
