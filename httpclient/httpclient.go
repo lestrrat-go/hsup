@@ -277,8 +277,6 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 				buf.WriteString("\nerr = json.NewEncoder(&jsbuf).Encode(in)")
 				buf.WriteString(errout)
 				buf.WriteString("\nw.WriteField(\"payload\", jsbuf.String())")
-				buf.WriteString("\nerr = w.Close()")
-				buf.WriteString(errout)
 
 				// files are specified outside of the schema, because they are not
 				// to be validated
@@ -293,9 +291,12 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 					buf.WriteString(errout)
 					buf.WriteString("\n}")
 				}
+				buf.WriteString("\nerr = w.Close()")
+				buf.WriteString(errout)
+			} else {
+				buf.WriteString("\n" + `err = json.NewEncoder(&buf).Encode(in)`)
+				buf.WriteString(errout)
 			}
-			buf.WriteString("\n" + `err = json.NewEncoder(&buf).Encode(in)`)
-			buf.WriteString(errout)
 		}
 	}
 
