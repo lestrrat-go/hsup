@@ -3,7 +3,6 @@ package httpclient
 import (
 	"bytes"
 	"fmt"
-	"go/format"
 	"io"
 	"log"
 	"os"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/jessevdk/go-flags"
 	"github.com/lestrrat/go-hsup"
+	"github.com/lestrrat/go-hsup/ext"
 	"github.com/lestrrat/go-hsup/internal/genutil"
 	"github.com/lestrrat/go-hsup/internal/parser"
 	"github.com/lestrrat/go-jshschema"
@@ -180,6 +180,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 			intype = t
 		}
 	}
+
 	if s := l.TargetSchema; s != nil {
 		if !s.IsResolved() {
 			rs, err := s.Resolve(ctx.Schema)
@@ -203,6 +204,31 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 		}
 		buf.WriteString(intype)
 	}
+
+	// If this is a multipart/form-data link, we need to add the potential
+	// files. This will be specified as a map of strings
+	var files []string
+	if extv, ok := l.Extras[ext.MultipartFilesKey]; ok {
+		listv, ok := extv.([]interface{})
+		if !ok {
+			return "", errors.Errorf("'%s' key must be a []string", ext.MultipartFilesKey)
+		}
+		files = make([]string, len(listv))
+		for i, v := range listv {
+			sv, ok := v.(string)
+			if !ok {
+				return "", errors.Errorf("'%s' key must be a []string", ext.MultipartFilesKey)
+			}
+			files[i] = sv
+		}
+
+		if intype != "" {
+			buf.WriteString(", ")
+		}
+
+		buf.WriteString("files map[string]string")
+	}
+
 	buf.WriteRune(')')
 
 	if outtype == "" {
@@ -253,6 +279,20 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 				buf.WriteString("\nw.WriteField(\"payload\", jsbuf.String())")
 				buf.WriteString("\nerr = w.Close()")
 				buf.WriteString(errout)
+
+				// files are specified outside of the schema, because they are not
+				// to be validated
+				for _, name := range files {
+					fmt.Fprintf(&buf, "\nif fn, ok := files[%s]; ok {", strconv.Quote(name))
+					fmt.Fprintf(&buf, "\nfw, err := w.CreateFormFile(%s, fn)", strconv.Quote(name))
+					buf.WriteString(errout)
+					buf.WriteString("\nf, err := os.Open(fn)")
+					buf.WriteString(errout)
+					buf.WriteString("\ndefer f.Close()")
+					buf.WriteString("\n_, err = io.Copy(fw, f)")
+					buf.WriteString(errout)
+					buf.WriteString("\n}")
+				}
 			}
 			buf.WriteString("\n" + `err = json.NewEncoder(&buf).Encode(in)`)
 			buf.WriteString(errout)
@@ -372,7 +412,7 @@ func generateClientCode(out io.Writer, ctx *genctx) error {
 
 	genutil.WriteImports(
 		&buf,
-		[]string{"bytes", "encoding/json", "fmt", "io", "mime/multipart", "net/http", "net/url", "sync"},
+		[]string{"bytes", "encoding/json", "fmt", "io", "mime/multipart", "net/http", "net/url", "os", "sync"},
 		imports,
 	)
 
@@ -381,6 +421,7 @@ const MaxResponseSize = (1<<20)*2
 var _ = bytes.MinRead
 var _ = json.Decoder{}
 var _ = multipart.Form{}
+var _ = os.Stdout
 var transportJSONBufferPool = sync.Pool{
 	New: allocTransportJSONBuffer,
 }
@@ -425,11 +466,7 @@ func New(s string) *Client {
 		fmt.Fprint(&buf, "\n\n")
 	}
 
-	fsrc, err := format.Source(buf.Bytes())
-	if err != nil {
-		return err
-	}
-	if _, err := out.Write(fsrc); err != nil {
+	if err := genutil.WriteFmtCode(out, &buf); err != nil {
 		return err
 	}
 
