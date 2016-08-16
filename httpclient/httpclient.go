@@ -334,11 +334,31 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 		buf.WriteString(errout)
 	}
 	buf.WriteString("\nif res.StatusCode != http.StatusOK {")
+	// If in case of an error, we should at least attempt to parse the
+	// resulting JSON
+	buf.WriteString("\nif strings.HasPrefix(strings.ToLower(res.Header.Get(`Content-Type`)), `application/json`) {")
+	buf.WriteString("\nvar errjson ErrJSON")
+	buf.WriteString("\nif err := json.NewDecoder(res.Body).Decode(&errjson); err != nil {")
 	buf.WriteString("\nreturn ")
 	if outtype != "" {
 		buf.WriteString("nil, ")
 	}
-	buf.WriteString("fmt.Errorf(`Invalid response: '%s'`, res.Status)")
+	buf.WriteString("errors.Errorf(`Invalid response: '%s'`, res.Status)")
+	buf.WriteString("\n}")
+
+	buf.WriteString("\nif len(errjson.Error) > 0 {")
+	buf.WriteString("\nreturn ")
+	if outtype != "" {
+		buf.WriteString("nil, ")
+	}
+	buf.WriteString("errors.New(errjson.Error)")
+	buf.WriteString("\n}")
+	buf.WriteString("\n}")
+	buf.WriteString("\nreturn ")
+	if outtype != "" {
+		buf.WriteString("nil, ")
+	}
+	buf.WriteString("errors.Errorf(`Invalid response: '%s'`, res.Status)")
 	buf.WriteString("\n}")
 	if outtype == "" {
 		buf.WriteString("\nreturn nil")
@@ -406,14 +426,14 @@ func generateClientCode(out io.Writer, ctx *genctx) error {
 	genutil.WriteDoNotEdit(&buf)
 	fmt.Fprintf(&buf, "package %s\n\n", ctx.ClientPkg)
 
-	imports := []string{"github.com/lestrrat/go-pdebug", "github.com/lestrrat/go-urlenc"}
+	imports := []string{"github.com/lestrrat/go-pdebug", "github.com/lestrrat/go-urlenc", "github.com/pkg/errors"}
 	if l := ctx.ClientHints.Imports; len(l) > 0 {
 		imports = append(imports, l...)
 	}
 
 	genutil.WriteImports(
 		&buf,
-		[]string{"bytes", "encoding/json", "fmt", "io", "mime/multipart", "net/http", "net/url", "os", "sync"},
+		[]string{"bytes", "encoding/json", "io", "mime/multipart", "net/http", "net/url", "os", "strings", "sync"},
 		imports,
 	)
 
@@ -443,6 +463,10 @@ func releaseTransportJSONBuffer(buf *bytes.Buffer) {
 type BasicAuth struct {
 	Username string
 	Password string
+}
+
+type ErrJSON struct {
+	Error string ` + "`" + `json:"error,omitempty"` + "`" + `
 }
 
 type Client struct {
