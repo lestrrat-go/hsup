@@ -707,6 +707,7 @@ func httpWithContext(h HandlerWithContext) http.HandlerFunc {
 		}
 		buf.WriteString("))")
 	}
+
 	buf.WriteString("\n}\n")
 
 	return genutil.WriteFmtCode(out, &buf)
