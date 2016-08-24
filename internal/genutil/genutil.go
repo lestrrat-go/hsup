@@ -114,7 +114,7 @@ func SplitVersion(v string) []int {
 		return ret
 	}
 
-	for i, e := range list[:3] {
+	for i, e := range list[:2] {
 		x, _ := strconv.Atoi(e)
 		ret[i] = x
 	}
