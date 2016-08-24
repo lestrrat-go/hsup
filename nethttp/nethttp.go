@@ -26,6 +26,7 @@ type Builder struct {
 	ClientPkg    string
 	CLISchema    string
 	Dir          string
+	GoVersion    string
 	Overwrite    bool
 	PkgPath      string
 	ValidatorPkg string
@@ -41,6 +42,7 @@ type genctx struct {
 	ClientPkg    string
 	CLISchema    string
 	Dir          string
+	GoVersion    string
 	Overwrite    bool
 	PkgPath      string
 	ServerHints  serverHints
@@ -60,6 +62,7 @@ func Process(opts hsup.Options) error {
 	b := New()
 	b.Dir = opts.Dir
 	b.AppPkg = opts.AppPkg
+	b.GoVersion = opts.GoVersion
 	b.PkgPath = opts.PkgPath
 	b.Overwrite = opts.Overwrite
 	b.CLISchema = localopts.CLISchema
@@ -101,6 +104,7 @@ func (b *Builder) Process(s *hschema.HyperSchema) error {
 		ClientPkg:    b.ClientPkg,
 		CLISchema:    b.CLISchema,
 		Dir:          b.Dir,
+		GoVersion:    b.GoVersion,
 		Overwrite:    b.Overwrite,
 		PkgPath:      b.PkgPath,
 		ValidatorPkg: b.ValidatorPkg,
@@ -524,14 +528,18 @@ func generateStubHandlerCode(out io.Writer, ctx *genctx) error {
 
 	fmt.Fprintf(&buf, "package %s\n\n", ctx.AppPkg)
 
+	var extlibs []string
+	if genutil.VersionCompare(ctx.GoVersion, "1.7") >= 0 {
+		extlibs = append(extlibs, "context")
+	} else {
+		extlibs = append(extlibs, "golang.org/x/net/context")
+	}
 	genutil.WriteImports(
 		&buf,
 		[]string{
 			"net/http",
 		},
-		[]string{
-			"golang.org/x/net/context",
-		},
+		extlibs,
 	)
 
 	for _, methodName := range ctx.MethodNames {
@@ -561,7 +569,12 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 		"github.com/gorilla/mux",
 		"github.com/lestrrat/go-pdebug",
 		"github.com/lestrrat/go-urlenc",
-		"golang.org/x/net/context",
+	}
+
+	if genutil.VersionCompare(ctx.GoVersion, "1.7") >= 0 {
+		imports = append(imports, "context")
+	} else {
+		imports = append(imports, "golang.org/x/net/context")
 	}
 
 	if len(ctx.RequestValidators) > 0 || len(ctx.ResponseValidators) > 0 {
