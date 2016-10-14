@@ -225,7 +225,14 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	}
 	fmt.Fprintf(&buf, "\nif strings.ToLower(r.Method) != `%s` {", method)
 	fmt.Fprintf(&buf, "\n"+`w.Header().Set("Allow", %s)`, strconv.Quote(method))
-	fmt.Fprintf(&buf, "\nhttpError(w, `Method was ` + r.Method + `, expected %s`, http.StatusNotFound, nil)", method)
+	buf.WriteString("\nmsgbuf := getBytesBuffer()")
+	buf.WriteString("\ndefer releaseBytesBuffer(msgbuf)")
+	buf.WriteString("\nmsgbuf.WriteString(`Method was `)")
+	buf.WriteString("\nmsgbuf.WriteString(r.Method)")
+	buf.WriteString("\nmsgbuf.WriteString(`, expected '")
+	buf.WriteString(method)
+	buf.WriteString("'`)")
+	buf.WriteString("\nhttpError(w, msgbuf.String(), http.StatusNotFound, nil)")
 	buf.WriteString("\nreturn")
 	buf.WriteString("\n}\n")
 
@@ -270,10 +277,13 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 						fmt.Fprintf(&buf, "\nv, err := getInteger(r.Form, %s)", qk)
 						fmt.Fprintf(&buf, `
 if err != nil {
-	httpError(w, "Invalid parameter " + %s, http.StatusInternalServerError, err)
+	msgbuf := getBytesBuffer()
+	releaseBytesBuffer(msgbuf)
+	msgbuf.WriteString("Invalid parameter %s")
+	httpError(w, msgbuf.String(), http.StatusInternalServerError, err)
 	return
 }
-`, strconv.Quote(k))
+`, k)
 					case schema.StringType:
 						fmt.Fprintf(&buf, "\nv := r.Form[%s]", qk)
 					}
@@ -291,7 +301,10 @@ default:
 			default:
 				buf.WriteString("\nvar payload ")
 				buf.WriteString(strings.TrimPrefix(payloadType, ctx.AppPkg+"."))
-				buf.WriteString("\nif err := urlenc.Unmarshal([]byte(r.URL.RawQuery), &payload); err != nil {")
+				buf.WriteString("\nqbuf := getBytesBuffer()")
+				buf.WriteString("\ndefer releaseBytesBuffer(qbuf)")
+				buf.WriteString("\nqbuf.WriteString(r.URL.RawQuery)")
+				buf.WriteString("\nif err := urlenc.Unmarshal(qbuf.Bytes(), &payload); err != nil {")
 				buf.WriteString("\nhttpError(w, `Failed to parse url query string`, http.StatusInternalServerError, err)")
 				buf.WriteString("\nreturn")
 				buf.WriteString("\n}")
@@ -300,15 +313,14 @@ default:
 			buf.WriteString("\nvar payload ")
 			buf.WriteString(strings.TrimPrefix(payloadType, ctx.AppPkg+"."))
 
-			buf.WriteString("\njsonbuf := getTransportJSONBuffer()")
-			buf.WriteString("\ndefer releaseTransportJSONBuffer(jsonbuf)")
+			buf.WriteString("\njsonbuf := getBytesBuffer()")
+			buf.WriteString("\ndefer releaseBytesBuffer(jsonbuf)")
 			buf.WriteString("\n\nswitch ct := r.Header.Get(\"Content-Type\"); {")
 			buf.WriteString("\ncase ct == \"application/json\":")
 			buf.WriteString("\nif _, err := io.Copy(jsonbuf, io.LimitReader(r.Body, MaxPostSize)); err != nil {")
 			buf.WriteString("\nhttpError(w, `Failed to read request body`, http.StatusInternalServerError, err)")
 			buf.WriteString("\nreturn")
 			buf.WriteString("\n}")
-			buf.WriteString("\ndefer r.Body.Close()")
 			// If this is a multipart request, we must extract out the "payload"
 			// field, and treat that as JSON
 			if l.EncType == "multipart/form-data"{
@@ -566,6 +578,7 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 	genutil.WriteDoNotEdit(&buf)
 
 	imports := []string{
+		"io/ioutil",
 		"github.com/gorilla/mux",
 		"github.com/lestrrat/go-pdebug",
 		"github.com/lestrrat/go-urlenc",
@@ -604,21 +617,20 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 const MaxPostSize = (1<<20)*2
 var _ = json.Decoder{}
 var _ = urlenc.Marshal
-var transportJSONBufferPool = sync.Pool{
-	New: allocTransportJSONBuffer,
+var bbPool = sync.Pool{
+	New: allocBytesBuffer,
 }
-
-func allocTransportJSONBuffer() interface {} {
+func allocBytesBuffer() interface{} {
 	return &bytes.Buffer{}
 }
 
-func getTransportJSONBuffer() *bytes.Buffer {
-	return transportJSONBufferPool.Get().(*bytes.Buffer)
+func getBytesBuffer() *bytes.Buffer {
+	return bbPool.Get().(*bytes.Buffer)
 }
 
-func releaseTransportJSONBuffer(buf *bytes.Buffer) {
+func releaseBytesBuffer(buf *bytes.Buffer) {
 	buf.Reset()
-	transportJSONBufferPool.Put(buf)
+	bbPool.Put(buf)
 }
 
 type Server struct {
@@ -680,6 +692,7 @@ type HandlerWithContext func(context.Context, http.ResponseWriter, *http.Request
 func httpWithContext(h HandlerWithContext) http.HandlerFunc {
 	return http.HandlerFunc(func (w http.ResponseWriter, r *http.Request) {
 		h(NewContext(r), w, r)
+		defer io.Copy(ioutil.Discard, r.Body)
 	})
 }
 
