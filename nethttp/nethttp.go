@@ -360,7 +360,7 @@ default:
 
 	fmt.Fprintf(&buf, "\ndo%s(ctx, w, r", name)
 	if _, ok := ctx.RequestValidators[name]; ok {
-		buf.WriteString(`, payload`)
+		buf.WriteString(`, &payload`)
 	}
 	buf.WriteString(`)`)
 	buf.WriteString("\n}\n")
@@ -560,7 +560,7 @@ func generateStubHandlerCode(out io.Writer, ctx *genctx) error {
 
 		fmt.Fprintf(&buf, "\nfunc do%s(ctx context.Context, w http.ResponseWriter, r *http.Request", methodName)
 		if _, ok := ctx.RequestValidators[methodName]; ok {
-			buf.WriteString(`, payload `)
+			buf.WriteString(`, payload *`)
 			buf.WriteString(payloadType)
 		}
 		buf.WriteString(") {")

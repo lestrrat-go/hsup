@@ -1,16 +1,16 @@
 hash: 61d0ca7c0063c20d8524f73a82d31b4f18d4f6a4642d8cb454f52d04ac566aad
-updated: 2016-08-30T08:54:33.932652817+09:00
+updated: 2016-11-16T15:22:31.10370614+09:00
 imports:
 - name: github.com/davecgh/go-spew
-  version: 6cf5744a041a0022271cefed95ba843f6d87fd51
+  version: 346938d642f2ec3594ed81d874461961cd0faa76
   subpackages:
   - spew
 - name: github.com/gorilla/context
   version: 08b5f424b9271eedf6f9f0ce86cb9396ed337a42
 - name: github.com/gorilla/mux
-  version: 0b13a922203ebdbfd236c818efcd5ed46097d690
+  version: 757bef944d0f21880861c2dd9c871ca543023cba
 - name: github.com/jessevdk/go-flags
-  version: a8cab0163d48558ffd77076c9c99388529766f63
+  version: 8bc97d602c3bfeb5fc6fc9b5a9c898f245495637
 - name: github.com/lestrrat/go-jshschema
   version: 4514acd168a63041862eb3d223a09a789cae6b3b
 - name: github.com/lestrrat/go-jspointer
@@ -20,9 +20,9 @@ imports:
   subpackages:
   - provider
 - name: github.com/lestrrat/go-jsschema
-  version: 134ddb70a4100eb4bf3c673cc42e8435d23302c3
+  version: a6a42341b50d8d7e2a733db922eefaa756321021
 - name: github.com/lestrrat/go-jsval
-  version: 96d0f5c4ce78f95b22f2d5f9171e845deb54a7bf
+  version: cf70aae60f5b41a32922066c41287b0168e55904
   subpackages:
   - builder
 - name: github.com/lestrrat/go-pdebug
@@ -30,19 +30,11 @@ imports:
 - name: github.com/lestrrat/go-structinfo
   version: f74c056fe41f860aa6264478c664a6fff8a64298
 - name: github.com/lestrrat/go-urlenc
-  version: c952b9a8b42e2b36637e0c5acee8a0f0898b8d80
+  version: 5c3f94270d877132bee7c096683119f95537c7be
 - name: github.com/pkg/errors
-  version: 17b591df37844cde689f4d5813e5cea0927d8dd2
+  version: 248dadf4e9068a0b3e79f02ed0a610d935de5302
 - name: golang.org/x/net
-  version: 6250b412798208e6c90b03b7c4f226de5aa299e2
+  version: 1c5acb2c2d1df0409de556978dd628d90aee5cb3
   subpackages:
   - context
-testImports:
-- name: github.com/pmezard/go-difflib
-  version: 792786c7400a136282c1664665ae0a8db921c6c2
-  subpackages:
-  - difflib
-- name: github.com/stretchr/testify
-  version: d77da356e56a7428ad25149ca77381849a6a5232
-  subpackages:
-  - assert
+devImports: []
