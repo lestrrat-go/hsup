@@ -223,7 +223,8 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	if method == "" {
 		method = "get"
 	}
-	fmt.Fprintf(&buf, "\nif strings.ToLower(r.Method) != `%s` {", method)
+	buf.WriteString("\nmethod := strings.ToLower(r.Method)")
+	fmt.Fprintf(&buf, "\nif method != `%s` {", method)
 	fmt.Fprintf(&buf, "\n"+`w.Header().Set("Allow", %s)`, strconv.Quote(method))
 	buf.WriteString("\nmsgbuf := getBytesBuffer()")
 	buf.WriteString("\ndefer releaseBytesBuffer(msgbuf)")
@@ -235,6 +236,10 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	buf.WriteString("\nhttpError(w, msgbuf.String(), http.StatusNotFound, nil)")
 	buf.WriteString("\nreturn")
 	buf.WriteString("\n}\n")
+
+	if v, ok := ctx.RequestCORS[name]; ok {
+		fmt.Fprintf(&buf, "\nw.Header().Set(`Access-Control-Allow-Origin`, %s)", strconv.Quote(v))
+	}
 
 	payloadType := ctx.RequestPayloadType[name]
 

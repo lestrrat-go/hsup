@@ -1,6 +1,7 @@
 package ext
 
 const (
+	CORSKey           = "hsup.cors"
 	MiddlewareKey     = "hsup.middlewares"
 	MultipartFilesKey = "hsup.multipartFiles"
 	TypeKey           = "hsup.type"

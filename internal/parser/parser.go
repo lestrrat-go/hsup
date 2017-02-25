@@ -20,6 +20,7 @@ type Result struct {
 	MethodWrappers      map[string][]string
 	Middlewares         []string
 	PathToMethods       map[string]string
+	RequestCORS         map[string]string
 	RequestPayloadType  map[string]string
 	RequestValidators   map[string]*jsval.JSVal
 	ResponsePayloadType map[string]string
@@ -33,6 +34,7 @@ func Parse(s *hschema.HyperSchema) (*Result, error) {
 		Methods:             make(map[string]string),
 		MethodWrappers:      make(map[string][]string),
 		PathToMethods:       make(map[string]string),
+		RequestCORS:         make(map[string]string),
 		RequestPayloadType:  make(map[string]string),
 		RequestValidators:   make(map[string]*jsval.JSVal),
 		ResponseValidators:  make(map[string]*jsval.JSVal),
@@ -70,6 +72,11 @@ func parse(ctx *Result, s *hschema.HyperSchema) error {
 		}
 
 		methodName := genutil.TitleToName(link.Title)
+
+		if v, ok := link.Extras[ext.CORSKey]; ok {
+			ctx.RequestCORS[methodName] = v.(string)
+		}
+
 		// Got to do this first, because validators are used in makeMethod()
 		if ls := link.Schema; ls != nil {
 			if !ls.IsResolved() {
