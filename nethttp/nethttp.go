@@ -646,8 +646,8 @@ type Server struct {
 // If you are using appengine, for example, you probably want to set this
 // function to something that create a context, and then sets
 // the appengine context to it so it can be referred to later.
-var NewContext func(* http.Request) context.Context= func(r *http.Request) context.Context {
-	return context.Background()
+var NewContext func(*http.Request) context.Context = func(r *http.Request) context.Context {
+	return r.Context()
 }
 
 func Run(l string) error {
