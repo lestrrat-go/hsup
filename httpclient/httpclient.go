@@ -257,7 +257,7 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 	errbuf.WriteString("\n}")
 	errout := errbuf.String()
 
-	fmt.Fprintf(&buf, "\n"+`u, err := url.Parse(c.Endpoint + %s)`, strconv.Quote(l.Path()))
+	fmt.Fprintf(&buf, "\n"+`u, err := url.Parse(c.endpoint + %s)`, strconv.Quote(l.Path()))
 	buf.WriteString(errout)
 
 	method := strings.ToLower(l.Method)
@@ -307,11 +307,6 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 		buf.WriteString("\n}")
 		buf.WriteString("\n" + `req, err := http.NewRequest("GET", u.String(), nil)`)
 		buf.WriteString(errout)
-		buf.WriteString("\n" + `if c.BasicAuth.Username != "" && c.BasicAuth.Password != "" {`)
-		buf.WriteString("\nreq.SetBasicAuth(c.BasicAuth.Username, c.BasicAuth.Password)")
-		buf.WriteString("\n}")
-		buf.WriteString("\n" + `res, err := c.Client.Do(req)`)
-		buf.WriteString(errout)
 	case "post":
 		buf.WriteString("\nif pdebug.Enabled {")
 		fmt.Fprintf(&buf, "\npdebug.Printf(%s, u.String())", strconv.Quote("POST to %s"))
@@ -326,13 +321,23 @@ func makeMethod(ctx *genctx, name string, l *hschema.Link) (string, error) {
 		} else {
 			buf.WriteString("\n" + `req.Header.Set("Content-Type", "application/json")`)
 		}
-
-		buf.WriteString("\n" + `if c.BasicAuth.Username != "" && c.BasicAuth.Password != "" {`)
-		buf.WriteString("\nreq.SetBasicAuth(c.BasicAuth.Username, c.BasicAuth.Password)")
-		buf.WriteString("\n}")
-		buf.WriteString("\n" + `res, err := c.Client.Do(req)`)
-		buf.WriteString(errout)
 	}
+
+	buf.WriteString("\n" + `if c.basicAuth.username != "" && c.basicAuth.password != "" {`)
+	buf.WriteString("\nreq.SetBasicAuth(c.basicAuth.username, c.basicAuth.password)")
+	buf.WriteString("\n}")
+	buf.WriteString("\n\nif m := c.mutator; m != nil {")
+	buf.WriteString("\nif err := m(req); err != nil {")
+	buf.WriteString("\nreturn ")
+	if outtype != "" {
+		buf.WriteString("nil, ")
+	}
+	buf.WriteString("errors.Wrap(err, `failed to mutate request`)")
+	buf.WriteString("\n}")
+	buf.WriteString("\n}")
+	buf.WriteString("\n" + `res, err := c.client.Do(req)`)
+	buf.WriteString(errout)
+
 	buf.WriteString("\nif res.StatusCode != http.StatusOK {")
 	// If in case of an error, we should at least attempt to parse the
 	// resulting JSON
@@ -461,8 +466,16 @@ func releaseTransportJSONBuffer(buf *bytes.Buffer) {
 }
 
 type BasicAuth struct {
-	Username string
-	Password string
+	username string
+	password string
+}
+
+func (a BasicAuth) Username() string {
+	return a.username
+}
+
+func (a BasicAuth) Password() string {
+	return a.password
 }
 
 type ErrJSON struct {
@@ -470,16 +483,38 @@ type ErrJSON struct {
 }
 
 type Client struct {
-	BasicAuth BasicAuth
-	Client *http.Client
-	Endpoint string
+	basicAuth BasicAuth
+	client *http.Client
+	endpoint string
+	mutator  func(*http.Request) error
 }
 
 func New(s string) *Client {
 	return &Client{
-		Client: &http.Client{},
-		Endpoint: s,
+		client: &http.Client{},
+		endpoint: s,
 	}
+}
+
+func (c *Client) BasicAuth() BasicAuth {
+	return c.basicAuth
+}
+
+func (c *Client) SetAuth(username, password string) {
+	c.basicAuth.username = username
+	c.basicAuth.password = password
+}
+
+func (c *Client) Client() *http.Client {
+	return c.client
+}
+
+func (c *Client) Endpoint() string {
+	return c.endpoint
+}
+
+func (c *Client) SetMutator(m func(*http.Request) error) {
+	c.mutator = m
 }
 
 `)

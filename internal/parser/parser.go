@@ -21,6 +21,7 @@ type Result struct {
 	Middlewares         []string
 	PathToMethods       map[string]string
 	RequestCORS         map[string]string
+	RequestMutators     map[string][]string
 	RequestPayloadType  map[string]string
 	RequestValidators   map[string]*jsval.JSVal
 	ResponsePayloadType map[string]string
@@ -35,6 +36,7 @@ func Parse(s *hschema.HyperSchema) (*Result, error) {
 		MethodWrappers:      make(map[string][]string),
 		PathToMethods:       make(map[string]string),
 		RequestCORS:         make(map[string]string),
+		RequestMutators:     make(map[string][]string),
 		RequestPayloadType:  make(map[string]string),
 		RequestValidators:   make(map[string]*jsval.JSVal),
 		ResponseValidators:  make(map[string]*jsval.JSVal),
@@ -77,6 +79,28 @@ func parse(ctx *Result, s *hschema.HyperSchema) error {
 			ctx.RequestCORS[methodName] = v.(string)
 		}
 
+		if cmr, ok := link.Extras[ext.ClientMutateRequestKey]; ok {
+			switch cmr.(type) {
+			case string:
+				ctx.RequestMutators[methodName] = []string{cmr.(string)}
+			case []interface{}:
+				list, ok := cmr.([]interface{})
+				if !ok {
+					return errors.Errorf(`%s must be a string or a list of strings`, ext.ClientMutateRequestKey)
+				}
+				cmrs := make([]string, len(list))
+				for i, e := range list {
+					s, ok := e.(string)
+					if !ok {
+						return errors.Errorf(`%s must be a string or a list of strings`, ext.ClientMutateRequestKey)
+					}
+					cmrs[i] = s
+				}
+				ctx.RequestMutators[methodName] = cmrs
+			default:
+				return errors.Errorf(`%s must be a string or a list of strings`, ext.ClientMutateRequestKey)
+			}
+		}
 		// Got to do this first, because validators are used in makeMethod()
 		if ls := link.Schema; ls != nil {
 			if !ls.IsResolved() {
@@ -98,6 +122,7 @@ func parse(ctx *Result, s *hschema.HyperSchema) error {
 			}
 			v.Name = fmt.Sprintf("HTTP%sRequest", methodName)
 			ctx.RequestValidators[methodName] = v
+
 		}
 
 		if ls := link.TargetSchema; ls != nil {
