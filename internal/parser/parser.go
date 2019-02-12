@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lestrrat/go-hsup/ext"
-	"github.com/lestrrat/go-hsup/internal/genutil"
-	"github.com/lestrrat/go-jshschema"
-	"github.com/lestrrat/go-jsval"
+	"github.com/lestrrat-go/hsup/ext"
+	"github.com/lestrrat-go/hsup/internal/genutil"
+	"github.com/lestrrat-go/jshschema"
+	"github.com/lestrrat-go/jsval"
 	"github.com/pkg/errors"
 )
 

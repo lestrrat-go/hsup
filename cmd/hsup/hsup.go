@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/jessevdk/go-flags"
-	"github.com/lestrrat/go-hsup"
-	"github.com/lestrrat/go-hsup/httpclient"
-	"github.com/lestrrat/go-hsup/nethttp"
-	"github.com/lestrrat/go-hsup/validator"
+	"github.com/lestrrat-go/hsup"
+	"github.com/lestrrat-go/hsup/httpclient"
+	"github.com/lestrrat-go/hsup/nethttp"
+	"github.com/lestrrat-go/hsup/validator"
 	"github.com/pkg/errors"
 )
 

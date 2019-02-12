@@ -12,12 +12,12 @@ import (
 	"strings"
 
 	"github.com/jessevdk/go-flags"
-	"github.com/lestrrat/go-hsup"
-	"github.com/lestrrat/go-hsup/ext"
-	"github.com/lestrrat/go-hsup/internal/genutil"
-	"github.com/lestrrat/go-hsup/internal/parser"
-	"github.com/lestrrat/go-jshschema"
-	"github.com/lestrrat/go-jsschema"
+	"github.com/lestrrat-go/hsup"
+	"github.com/lestrrat-go/hsup/ext"
+	"github.com/lestrrat-go/hsup/internal/genutil"
+	"github.com/lestrrat-go/hsup/internal/parser"
+	"github.com/lestrrat-go/jshschema"
+	"github.com/lestrrat-go/jsschema"
 	"github.com/pkg/errors"
 )
 
@@ -585,8 +585,8 @@ func generateServerCode(out io.Writer, ctx *genctx) error {
 	imports := []string{
 		"io/ioutil",
 		"github.com/gorilla/mux",
-		"github.com/lestrrat/go-pdebug",
-		"github.com/lestrrat/go-urlenc",
+		"github.com/lestrrat-go/pdebug",
+		"github.com/lestrrat-go/urlenc",
 	}
 
 	if genutil.VersionCompare(ctx.GoVersion, "1.7") >= 0 {

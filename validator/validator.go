@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 
 	"github.com/jessevdk/go-flags"
-	"github.com/lestrrat/go-hsup"
-	"github.com/lestrrat/go-hsup/internal/genutil"
-	"github.com/lestrrat/go-hsup/internal/parser"
-	"github.com/lestrrat/go-jshschema"
-	"github.com/lestrrat/go-jsval"
+	"github.com/lestrrat-go/hsup"
+	"github.com/lestrrat-go/hsup/internal/genutil"
+	"github.com/lestrrat-go/hsup/internal/parser"
+	"github.com/lestrrat-go/jshschema"
+	"github.com/lestrrat-go/jsval"
 	"github.com/pkg/errors"
 )
 
@@ -155,7 +155,7 @@ func generateValidatorCode(out io.Writer, ctx *genctx) error {
 		&buf,
 		nil,
 		[]string{
-			"github.com/lestrrat/go-jsval",
+			"github.com/lestrrat-go/jsval",
 		},
 	)
 	if err := g.Process(&buf, validators...); err != nil {

@@ -7,7 +7,7 @@ package hsup
 // hsup.NetHTTP.ProcessFile(schemaFile)
 
 import (
-	"github.com/lestrrat/go-jshschema"
+	"github.com/lestrrat-go/jshschema"
 )
 
 type Processor interface {

@@ -12,11 +12,11 @@ import (
 	"strings"
 
 	"github.com/jessevdk/go-flags"
-	"github.com/lestrrat/go-hsup"
-	"github.com/lestrrat/go-hsup/ext"
-	"github.com/lestrrat/go-hsup/internal/genutil"
-	"github.com/lestrrat/go-hsup/internal/parser"
-	"github.com/lestrrat/go-jshschema"
+	"github.com/lestrrat-go/hsup"
+	"github.com/lestrrat-go/hsup/ext"
+	"github.com/lestrrat-go/hsup/internal/genutil"
+	"github.com/lestrrat-go/hsup/internal/parser"
+	"github.com/lestrrat-go/jshschema"
 	"github.com/pkg/errors"
 )
 
@@ -431,7 +431,7 @@ func generateClientCode(out io.Writer, ctx *genctx) error {
 	genutil.WriteDoNotEdit(&buf)
 	fmt.Fprintf(&buf, "package %s\n\n", ctx.ClientPkg)
 
-	imports := []string{"github.com/lestrrat/go-pdebug", "github.com/lestrrat/go-urlenc", "github.com/pkg/errors"}
+	imports := []string{"github.com/lestrrat-go/pdebug", "github.com/lestrrat-go/urlenc", "github.com/pkg/errors"}
 	if l := ctx.ClientHints.Imports; len(l) > 0 {
 		imports = append(imports, l...)
 	}
